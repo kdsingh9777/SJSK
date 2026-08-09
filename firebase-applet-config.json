@@ -1,12 +1,12 @@
 {
-  "projectId": "ambient-pad-s6m9v",
-  "appId": "1:873626893112:web:d793dd80a6d034ba19dfcd",
-  "apiKey": "AIzaSyB_Pb63m0_A7mzHrJt5cgex5Ek4_uBkOO0",
-  "authDomain": "ambient-pad-s6m9v.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-cscdigitalsevama-7eacaa45-d375-43ab-87ce-5620fffb2ef8",
-  "storageBucket": "ambient-pad-s6m9v.firebasestorage.app",
-  "messagingSenderId": "873626893112",
-  "measurementId": "",
-  "oAuthClientId": "873626893112-f939q12mtif67fo2n39idk8driofhumr.apps.googleusercontent.com",
+  "projectId": "shauryacsc",
+  "appId": "1:215322295158:web:2277358940890865395857",
+  "apiKey": "AIzaSyDaSW4hOFxmvgAfMuhkJGJfKQHqnkEzu7I",
+  "authDomain": "shauryacsc.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "shauryacsc.firebasestorage.app",
+  "messagingSenderId": "215322295158",
+  "measurementId": "G-FKNZZ87EXN",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }
