@@ -26,7 +26,6 @@ import {
 } from 'lucide-react';
 import { ServiceTransaction, CertificateApplication, Customer, ScholarshipApplication, PANApplication } from '../types';
 import { WhatsAppCustomerModal } from './WhatsAppCustomerModal';
-import { ImportantLinksSection } from './ImportantLinksSection';
 
 interface DashboardProps {
   transactions: ServiceTransaction[];
@@ -463,9 +462,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </p>
         </div>
       </div>
-
-      {/* Important Links Section (Placed right below Dashboard Top Summary & Revenue Stats) */}
-      <ImportantLinksSection />
 
       {/* Main Content Grid: Recent Transactions & Income/Caste/Domicile Quick Portal */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
