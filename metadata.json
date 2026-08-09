@@ -1,0 +1,6 @@
+{
+  "name": "Shaurya Jan Sewa Kendra",
+  "description": "Hindi-friendly CSC centre management app for customer profiles, Aadhaar/PAN vault, certificates (income, caste, domicile), payment tracking, print receipts, offline mode, and cloud backup.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

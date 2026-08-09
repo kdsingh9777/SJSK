@@ -1,0 +1,123 @@
+{
+  "entities": {
+    "Config": {
+      "title": "CSCConfig",
+      "description": "Configuration settings for CSC Centre",
+      "type": "object",
+      "properties": {
+        "centreName": { "type": "string" },
+        "operatorName": { "type": "string" },
+        "vleId": { "type": "string" },
+        "address": { "type": "string" },
+        "mobile": { "type": "string" },
+        "email": { "type": "string" }
+      }
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer record in directory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "mobile": { "type": "string" },
+        "aadhaar": { "type": "string" },
+        "fatherName": { "type": "string" },
+        "address": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "ServiceTransaction": {
+      "title": "ServiceTransaction",
+      "description": "Service transaction log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "receiptNo": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerMobile": { "type": "string" },
+        "serviceName": { "type": "string" },
+        "category": { "type": "string" },
+        "fee": { "type": "number" },
+        "amountPaid": { "type": "number" },
+        "balanceDue": { "type": "number" },
+        "paymentStatus": { "type": "string" },
+        "orderDate": { "type": "string" }
+      }
+    },
+    "CertificateApplication": {
+      "title": "CertificateApplication",
+      "description": "Certificate application",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "certificateType": { "type": "string" },
+        "applicantName": { "type": "string" },
+        "mobile": { "type": "string" },
+        "aadhaar": { "type": "string" },
+        "applicationNo": { "type": "string" },
+        "deliveryStatus": { "type": "string" },
+        "paymentStatus": { "type": "string" },
+        "fee": { "type": "number" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "ScholarshipApplication": {
+      "title": "ScholarshipApplication",
+      "description": "Scholarship application",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentName": { "type": "string" },
+        "fatherName": { "type": "string" },
+        "mobile": { "type": "string" },
+        "scheme": { "type": "string" },
+        "course": { "type": "string" },
+        "status": { "type": "string" },
+        "applicationNo": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    },
+    "PANApplication": {
+      "title": "PANApplication",
+      "description": "PAN application",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "applicantName": { "type": "string" },
+        "fatherName": { "type": "string" },
+        "mobile": { "type": "string" },
+        "applicationType": { "type": "string" },
+        "applicationNumber": { "type": "string" },
+        "currentStatus": { "type": "string" },
+        "createdAt": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/csc_config/{configId}": {
+      "schema": { "$ref": "#/entities/Config" },
+      "description": "CSC Kendra Profile Config"
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "Customer Directory Records"
+    },
+    "/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/ServiceTransaction" },
+      "description": "Service Transactions"
+    },
+    "/certificates/{certificateId}": {
+      "schema": { "$ref": "#/entities/CertificateApplication" },
+      "description": "Certificate Applications"
+    },
+    "/scholarships/{scholarshipId}": {
+      "schema": { "$ref": "#/entities/ScholarshipApplication" },
+      "description": "Scholarship Applications"
+    },
+    "/pan_applications/{panId}": {
+      "schema": { "$ref": "#/entities/PANApplication" },
+      "description": "PAN Card Applications"
+    }
+  }
+}
