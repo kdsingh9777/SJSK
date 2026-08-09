@@ -97,29 +97,46 @@ export default function App() {
     initLocalStorage();
     reloadAllData();
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    let unsubscribeRealtime: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       setAuthLoading(false);
 
+      if (unsubscribeRealtime) {
+        unsubscribeRealtime();
+        unsubscribeRealtime = null;
+      }
+
       if (user) {
-        // Fetch cloud backup data specific to user or global
-        fetchCloudBackupData().then((cloudData) => {
-          if (cloudData) {
-            reloadAllData();
-          }
+        // Fetch cloud backup data specific to this user account
+        const cloudData = await fetchCloudBackupData(user.uid);
+        if (cloudData) {
+          reloadAllData();
+        } else {
+          // Initial backup for new user account
+          await syncWithCloud(user.uid);
+        }
+
+        // Subscribe to real-time changes across devices for this user
+        unsubscribeRealtime = subscribeToRealtimeSync(() => {
+          reloadAllData();
+        }, user.uid);
+      } else {
+        unsubscribeRealtime = subscribeToRealtimeSync(() => {
+          reloadAllData();
         });
       }
-    });
-
-    // Realtime Sync Listener across all open tabs/devices
-    const unsubscribeRealtime = subscribeToRealtimeSync(() => {
-      reloadAllData();
     });
 
     // Online/Offline Listeners
     const handleOnline = () => {
       setIsOnline(true);
-      handleCloudSync();
+      if (auth.currentUser) {
+        fetchCloudBackupData(auth.currentUser.uid).then((cloudData) => {
+          if (cloudData) reloadAllData();
+        });
+      }
     };
     const handleOffline = () => {
       setIsOnline(false);
@@ -128,16 +145,11 @@ export default function App() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Initial silent sync if online
-    if (navigator.onLine) {
-      handleCloudSync();
-    }
-
     return () => {
       unsubscribeAuth();
+      if (unsubscribeRealtime) unsubscribeRealtime();
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
-      unsubscribeRealtime();
     };
   }, []);
 

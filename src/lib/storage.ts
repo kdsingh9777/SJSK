@@ -32,12 +32,26 @@ const KEYS = {
   LAST_SYNC: 'csc_last_sync_v1',
 };
 
-function getCloudDocRef(): DocumentReference {
-  const uid = auth.currentUser?.uid;
+export function getCloudDocRef(userUid?: string): DocumentReference {
+  const uid = userUid || auth.currentUser?.uid;
   if (uid) {
     return doc(db, 'app_data', uid);
   }
   return doc(db, 'app_data', 'global_state');
+}
+
+export function applyCloudDataToLocalStorage(data: CloudBackupPayload): void {
+  if (!data) return;
+  if (data.cscConfig) localStorage.setItem(KEYS.CONFIG, JSON.stringify(data.cscConfig));
+  if (data.customers !== undefined) localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(data.customers));
+  if (data.transactions !== undefined) localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(data.transactions));
+  if (data.certificates !== undefined) localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(data.certificates));
+  if (data.scholarships !== undefined) localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(data.scholarships));
+  if (data.panApplications !== undefined) localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(data.panApplications));
+  if (data.importantLinks !== undefined) localStorage.setItem(KEYS.IMPORTANT_LINKS, JSON.stringify(data.importantLinks));
+
+  const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  localStorage.setItem(KEYS.LAST_SYNC, timeStr);
 }
 
 // Initialize default storage if empty
@@ -66,10 +80,10 @@ export function initLocalStorage(): void {
 }
 
 // Fetch global state from Firestore or server backup
-export async function fetchCloudBackupData(): Promise<CloudBackupPayload | null> {
+export async function fetchCloudBackupData(userUid?: string): Promise<CloudBackupPayload | null> {
   try {
     // 1. Try Firestore first
-    const docRef = getCloudDocRef();
+    const docRef = getCloudDocRef(userUid);
     const docSnap = await getDoc(docRef);
 
     let data: CloudBackupPayload | null = null;
@@ -87,17 +101,8 @@ export async function fetchCloudBackupData(): Promise<CloudBackupPayload | null>
       }
     }
 
-    if (data && data.cscConfig) {
-      if (data.cscConfig) localStorage.setItem(KEYS.CONFIG, JSON.stringify(data.cscConfig));
-      if (data.customers) localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(data.customers));
-      if (data.transactions) localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(data.transactions));
-      if (data.certificates) localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(data.certificates));
-      if (data.scholarships) localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(data.scholarships));
-      if (data.panApplications) localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(data.panApplications));
-      if (data.importantLinks) localStorage.setItem(KEYS.IMPORTANT_LINKS, JSON.stringify(data.importantLinks));
-
-      const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      localStorage.setItem(KEYS.LAST_SYNC, timeStr);
+    if (data && (data.cscConfig || data.customers || data.transactions)) {
+      applyCloudDataToLocalStorage(data);
       return data;
     }
   } catch (err) {
@@ -107,23 +112,14 @@ export async function fetchCloudBackupData(): Promise<CloudBackupPayload | null>
 }
 
 // Subscribe to real-time changes across devices
-export function subscribeToRealtimeSync(onDataChanged: () => void): () => void {
+export function subscribeToRealtimeSync(onDataChanged: () => void, userUid?: string): () => void {
   try {
-    const docRef = getCloudDocRef();
+    const docRef = getCloudDocRef(userUid);
     return onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data() as CloudBackupPayload;
-        if (data && data.cscConfig) {
-          localStorage.setItem(KEYS.CONFIG, JSON.stringify(data.cscConfig));
-          if (data.customers) localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(data.customers));
-          if (data.transactions) localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(data.transactions));
-          if (data.certificates) localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(data.certificates));
-          if (data.scholarships) localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(data.scholarships));
-          if (data.panApplications) localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(data.panApplications));
-          if (data.importantLinks) localStorage.setItem(KEYS.IMPORTANT_LINKS, JSON.stringify(data.importantLinks));
-
-          const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          localStorage.setItem(KEYS.LAST_SYNC, timeStr);
+        if (data && (data.cscConfig || data.customers || data.transactions)) {
+          applyCloudDataToLocalStorage(data);
           onDataChanged();
         }
       }
@@ -428,7 +424,7 @@ export function getLastSyncTime(): string | null {
   return localStorage.getItem(KEYS.LAST_SYNC);
 }
 
-export async function syncWithCloud(): Promise<{ success: boolean; message: string }> {
+export async function syncWithCloud(userUid?: string): Promise<{ success: boolean; message: string }> {
   try {
     const payload: CloudBackupPayload = {
       lastUpdated: new Date().toISOString(),
@@ -443,7 +439,7 @@ export async function syncWithCloud(): Promise<{ success: boolean; message: stri
 
     // Save to Firestore
     try {
-      const docRef = getCloudDocRef();
+      const docRef = getCloudDocRef(userUid);
       await setDoc(docRef, payload, { merge: true });
     } catch (fsErr) {
       console.warn('Firestore sync warning:', fsErr);
@@ -476,7 +472,7 @@ function triggerAutoSync() {
     if (navigator.onLine) {
       syncWithCloud();
     }
-  }, 2000);
+  }, 1000);
 }
 
 export function getImportantLinks(): ImportantLink[] {
