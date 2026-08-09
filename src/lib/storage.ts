@@ -32,6 +32,15 @@ const KEYS = {
   LAST_SYNC: 'csc_last_sync_v1',
 };
 
+export function getCloudDocRefs(userUid?: string): DocumentReference[] {
+  const refs: DocumentReference[] = [doc(db, 'app_data', 'global_state')];
+  const uid = userUid || auth.currentUser?.uid;
+  if (uid && uid !== 'global_state') {
+    refs.push(doc(db, 'app_data', uid));
+  }
+  return refs;
+}
+
 export function getCloudDocRef(userUid?: string): DocumentReference {
   const uid = userUid || auth.currentUser?.uid;
   if (uid) {
@@ -77,7 +86,10 @@ export function applyCloudDataToLocalStorage(data: CloudBackupPayload): void {
 
   if (data.cscConfig && data.cscConfig.centreName) {
     const currentConfig = getCSCConfig();
-    if (data.cscConfig.centreName !== 'CSC Digital Seva Kendra' || currentConfig.centreName === 'CSC Digital Seva Kendra') {
+    const isDataDefault = data.cscConfig.centreName === 'CSC Digital Seva Kendra' && data.cscConfig.vleId === 'CSC-UP-12345678';
+    const isCurrentDefault = currentConfig.centreName === 'CSC Digital Seva Kendra' && currentConfig.vleId === 'CSC-UP-12345678';
+
+    if (!isDataDefault || isCurrentDefault) {
       localStorage.setItem(KEYS.CONFIG, JSON.stringify(data.cscConfig));
     }
   }
@@ -111,6 +123,57 @@ export function applyCloudDataToLocalStorage(data: CloudBackupPayload): void {
   localStorage.setItem(KEYS.LAST_SYNC, timeStr);
 }
 
+// Helper to merge multiple payload objects into one master payload
+export function mergePayloads(payloads: (CloudBackupPayload | null | undefined)[]): CloudBackupPayload {
+  let config = getCSCConfig();
+  let customers = getCustomers();
+  let transactions = getTransactions();
+  let certificates = getCertificates();
+  let scholarships = getScholarships();
+  let panApplications = getPANApplications();
+  let importantLinks = getImportantLinks();
+
+  for (const p of payloads) {
+    if (!p) continue;
+    if (p.cscConfig && p.cscConfig.centreName) {
+      const isPDefault = p.cscConfig.centreName === 'CSC Digital Seva Kendra' && p.cscConfig.vleId === 'CSC-UP-12345678';
+      const isConfigDefault = config.centreName === 'CSC Digital Seva Kendra' && config.vleId === 'CSC-UP-12345678';
+      if (!isPDefault || isConfigDefault) {
+        config = p.cscConfig;
+      }
+    }
+    if (p.customers && p.customers.length > 0) {
+      customers = mergeLists(customers, p.customers);
+    }
+    if (p.transactions && p.transactions.length > 0) {
+      transactions = mergeLists(transactions, p.transactions);
+    }
+    if (p.certificates && p.certificates.length > 0) {
+      certificates = mergeLists(certificates, p.certificates);
+    }
+    if (p.scholarships && p.scholarships.length > 0) {
+      scholarships = mergeLists(scholarships, p.scholarships);
+    }
+    if (p.panApplications && p.panApplications.length > 0) {
+      panApplications = mergeLists(panApplications, p.panApplications);
+    }
+    if (p.importantLinks && p.importantLinks.length > 0) {
+      importantLinks = mergeLists(importantLinks, p.importantLinks);
+    }
+  }
+
+  return {
+    lastUpdated: new Date().toISOString(),
+    cscConfig: config,
+    customers,
+    transactions,
+    certificates,
+    scholarships,
+    panApplications,
+    importantLinks,
+  };
+}
+
 // Initialize default storage if empty
 export function initLocalStorage(): void {
   if (!localStorage.getItem(KEYS.CONFIG)) {
@@ -139,28 +202,38 @@ export function initLocalStorage(): void {
 // Fetch global state from Firestore or server backup
 export async function fetchCloudBackupData(userUid?: string): Promise<CloudBackupPayload | null> {
   try {
-    // 1. Try Firestore first
-    const docRef = getCloudDocRef(userUid);
-    const docSnap = await getDoc(docRef);
+    const refs = getCloudDocRefs(userUid);
+    const fetchedPayloads: (CloudBackupPayload | null)[] = [];
 
-    let data: CloudBackupPayload | null = null;
+    // 1. Fetch all Firestore refs
+    for (const docRef of refs) {
+      try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          fetchedPayloads.push(docSnap.data() as CloudBackupPayload);
+        }
+      } catch (e) {
+        console.warn('Doc fetch notice:', e);
+      }
+    }
 
-    if (docSnap.exists()) {
-      data = docSnap.data() as CloudBackupPayload;
-    } else {
-      // 2. Fallback to server endpoint
+    // 2. Fetch server endpoint
+    try {
       const res = await fetch('/api/backup');
       if (res.ok) {
         const json = await res.json();
         if (json && json.cscConfig) {
-          data = json as CloudBackupPayload;
+          fetchedPayloads.push(json as CloudBackupPayload);
         }
       }
+    } catch (e) {
+      console.warn('Backup fetch notice:', e);
     }
 
-    if (data && (data.cscConfig || data.customers || data.transactions)) {
-      applyCloudDataToLocalStorage(data);
-      return data;
+    if (fetchedPayloads.length > 0) {
+      const masterPayload = mergePayloads(fetchedPayloads);
+      applyCloudDataToLocalStorage(masterPayload);
+      return masterPayload;
     }
   } catch (err) {
     console.warn('Failed to fetch cloud backup data:', err);
@@ -170,23 +243,30 @@ export async function fetchCloudBackupData(userUid?: string): Promise<CloudBacku
 
 // Subscribe to real-time changes across devices
 export function subscribeToRealtimeSync(onDataChanged: () => void, userUid?: string): () => void {
+  const unsubscribers: (() => void)[] = [];
   try {
-    const docRef = getCloudDocRef(userUid);
-    return onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as CloudBackupPayload;
-        if (data && (data.cscConfig || data.customers || data.transactions)) {
-          applyCloudDataToLocalStorage(data);
-          onDataChanged();
+    const refs = getCloudDocRefs(userUid);
+    for (const docRef of refs) {
+      const unsub = onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data() as CloudBackupPayload;
+          if (data && (data.cscConfig || data.customers || data.transactions)) {
+            applyCloudDataToLocalStorage(data);
+            onDataChanged();
+          }
         }
-      }
-    }, (error) => {
-      console.warn('Realtime sync subscription notice:', error);
-    });
+      }, (error) => {
+        console.warn('Realtime sync subscription notice:', error);
+      });
+      unsubscribers.push(unsub);
+    }
   } catch (err) {
     console.warn('Realtime sync error:', err);
-    return () => {};
   }
+
+  return () => {
+    unsubscribers.forEach((fn) => fn());
+  };
 }
 
 export function getCSCConfig(): CSCConfig {
@@ -484,80 +564,43 @@ export function getLastSyncTime(): string | null {
 export async function syncWithCloud(userUid?: string): Promise<{ success: boolean; message: string }> {
   try {
     const activeUid = userUid || auth.currentUser?.uid;
-    const docRef = getCloudDocRef(activeUid);
+    const refs = getCloudDocRefs(activeUid);
 
-    let localCustomers = getCustomers();
-    let localTransactions = getTransactions();
-    let localCertificates = getCertificates();
-    let localScholarships = getScholarships();
-    let localPanApps = getPANApplications();
-    let localLinks = getImportantLinks();
-    let config = getCSCConfig();
+    const fetchedPayloads: (CloudBackupPayload | null)[] = [];
 
-    // Try reading Firestore doc first to merge any new remote items before writing
-    try {
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const cloudData = docSnap.data() as CloudBackupPayload;
-        if (cloudData) {
-          if (cloudData.customers && cloudData.customers.length > 0) {
-            localCustomers = mergeLists(localCustomers, cloudData.customers);
-            localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(localCustomers));
-          }
-          if (cloudData.transactions && cloudData.transactions.length > 0) {
-            localTransactions = mergeLists(localTransactions, cloudData.transactions);
-            localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(localTransactions));
-          }
-          if (cloudData.certificates && cloudData.certificates.length > 0) {
-            localCertificates = mergeLists(localCertificates, cloudData.certificates);
-            localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(localCertificates));
-          }
-          if (cloudData.scholarships && cloudData.scholarships.length > 0) {
-            localScholarships = mergeLists(localScholarships, cloudData.scholarships);
-            localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(localScholarships));
-          }
-          if (cloudData.panApplications && cloudData.panApplications.length > 0) {
-            localPanApps = mergeLists(localPanApps, cloudData.panApplications);
-            localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(localPanApps));
-          }
-          if (cloudData.importantLinks && cloudData.importantLinks.length > 0) {
-            localLinks = mergeLists(localLinks, cloudData.importantLinks);
-            localStorage.setItem(KEYS.IMPORTANT_LINKS, JSON.stringify(localLinks));
-          }
-          if (cloudData.cscConfig && cloudData.cscConfig.centreName && cloudData.cscConfig.centreName !== 'CSC Digital Seva Kendra') {
-            config = cloudData.cscConfig;
-            localStorage.setItem(KEYS.CONFIG, JSON.stringify(config));
-          }
+    // 1. Try reading all Firestore docs to merge any remote items before writing
+    for (const docRef of refs) {
+      try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          fetchedPayloads.push(docSnap.data() as CloudBackupPayload);
         }
+      } catch (readErr) {
+        console.warn('Pre-sync doc read notice:', readErr);
       }
-    } catch (readErr) {
-      console.warn('Pre-sync read notice:', readErr);
     }
 
-    const payload: CloudBackupPayload = {
-      lastUpdated: new Date().toISOString(),
-      cscConfig: config,
-      customers: localCustomers,
-      transactions: localTransactions,
-      certificates: localCertificates,
-      scholarships: localScholarships,
-      panApplications: localPanApps,
-      importantLinks: localLinks,
-    };
+    // 2. Combine all cloud data with local storage data into a master payload
+    const masterPayload = mergePayloads(fetchedPayloads);
 
-    // Save merged payload to Firestore
-    try {
-      await setDoc(docRef, payload, { merge: true });
-    } catch (fsErr) {
-      console.warn('Firestore sync write warning:', fsErr);
+    // Apply merged result back to local storage
+    applyCloudDataToLocalStorage(masterPayload);
+
+    // 3. Save merged master payload to ALL Firestore doc references
+    for (const docRef of refs) {
+      try {
+        await setDoc(docRef, masterPayload, { merge: true });
+      } catch (fsErr) {
+        console.warn('Firestore sync write warning:', fsErr);
+      }
     }
 
-    // Save to Express API endpoint
+    // 4. Save to Express API endpoint
     try {
       await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(masterPayload),
       });
     } catch (apiErr) {
       // Ignore API server sync errors

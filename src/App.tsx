@@ -97,6 +97,13 @@ export default function App() {
     initLocalStorage();
     reloadAllData();
 
+    // Perform an initial cloud fetch on mount to get global_state immediately
+    fetchCloudBackupData().then((cloudData) => {
+      if (cloudData) {
+        reloadAllData();
+      }
+    });
+
     let unsubscribeRealtime: (() => void) | null = null;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
@@ -108,25 +115,20 @@ export default function App() {
         unsubscribeRealtime = null;
       }
 
-      if (user) {
-        // Fetch cloud backup data specific to this user account
-        const cloudData = await fetchCloudBackupData(user.uid);
-        if (cloudData) {
-          reloadAllData();
-        } else {
-          // Initial backup for new user account
-          await syncWithCloud(user.uid);
-        }
-
-        // Subscribe to real-time changes across devices for this user
-        unsubscribeRealtime = subscribeToRealtimeSync(() => {
-          reloadAllData();
-        }, user.uid);
-      } else {
-        unsubscribeRealtime = subscribeToRealtimeSync(() => {
-          reloadAllData();
-        });
+      const uid = user?.uid;
+      // Fetch cloud backup data for this user account & global state
+      const cloudData = await fetchCloudBackupData(uid);
+      if (cloudData) {
+        reloadAllData();
       }
+      // Always sync to ensure local & cloud are unified
+      await syncWithCloud(uid);
+      reloadAllData();
+
+      // Subscribe to real-time multi-doc changes across devices
+      unsubscribeRealtime = subscribeToRealtimeSync(() => {
+        reloadAllData();
+      }, uid);
     });
 
     // Online/Offline Listeners
