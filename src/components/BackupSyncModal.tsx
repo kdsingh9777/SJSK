@@ -48,7 +48,9 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
   const [mobile, setMobile] = useState(config.mobile);
   const [syncStatusMsg, setSyncStatusMsg] = useState('');
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const [isImporting, setIsImporting] = useState(false);
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     const updated: CSCConfig = {
       ...config,
@@ -59,7 +61,10 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
       mobile: mobile.trim(),
     };
     onSaveConfig(updated);
-    alert('Jan Seva Kendra details updated successfully!');
+    if (isOnline) {
+      await syncWithCloud();
+    }
+    alert('Jan Seva Kendra details updated & saved online to Cloud!');
   };
 
   const handleDownloadJSON = () => {
@@ -76,17 +81,27 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
   const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setIsImporting(true);
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         const content = event.target?.result as string;
         if (content) {
-          const success = importFullDataJSON(content);
-          if (success) {
-            alert('Backup data restored successfully!');
-            onDataReload();
-          } else {
-            alert('Invalid backup file!');
+          try {
+            const success = await importFullDataJSON(content);
+            if (success) {
+              alert('✓ All JSON backup entries successfully uploaded & saved online to Cloud!');
+              onDataReload();
+            } else {
+              alert('Invalid backup file format!');
+            }
+          } catch (err) {
+            console.error('Import error:', err);
+            alert('Failed to process JSON backup file.');
+          } finally {
+            setIsImporting(false);
           }
+        } else {
+          setIsImporting(false);
         }
       };
       reader.readAsText(file);
@@ -212,14 +227,22 @@ export const BackupSyncModal: React.FC<BackupSyncModalProps> = ({
 
             <div className="border border-dashed border-slate-300 p-3 rounded-xl text-center bg-slate-50">
               <label className="block text-xs font-bold text-slate-700 mb-1 cursor-pointer">
-                Restore Previous JSON Backup:
+                Restore Previous JSON Backup (Syncs Online to Cloud):
               </label>
-              <input
-                type="file"
-                accept=".json"
-                onChange={handleImportJSON}
-                className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer"
-              />
+              {isImporting ? (
+                <div className="flex items-center justify-center gap-2 py-2 text-indigo-600 font-bold text-xs">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Uploading & Syncing Data Online to Cloud...</span>
+                </div>
+              ) : (
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportJSON}
+                  disabled={isImporting}
+                  className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 cursor-pointer disabled:opacity-50"
+                />
+              )}
             </div>
           </div>
         </div>

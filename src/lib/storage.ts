@@ -566,9 +566,21 @@ export async function syncWithCloud(userUid?: string): Promise<{ success: boolea
     const activeUid = userUid || auth.currentUser?.uid;
     const refs = getCloudDocRefs(activeUid);
 
-    const fetchedPayloads: (CloudBackupPayload | null)[] = [];
+    // 1. Build current local storage payload so every single entry is included
+    const localPayload: CloudBackupPayload = {
+      lastUpdated: new Date().toISOString(),
+      cscConfig: getCSCConfig(),
+      customers: getCustomers(),
+      transactions: getTransactions(),
+      certificates: getCertificates(),
+      scholarships: getScholarships(),
+      panApplications: getPANApplications(),
+      importantLinks: getImportantLinks(),
+    };
 
-    // 1. Try reading all Firestore docs to merge any remote items before writing
+    const fetchedPayloads: (CloudBackupPayload | null)[] = [localPayload];
+
+    // 2. Fetch existing cloud docs to merge multi-device entries
     for (const docRef of refs) {
       try {
         const docSnap = await getDoc(docRef);
@@ -580,13 +592,13 @@ export async function syncWithCloud(userUid?: string): Promise<{ success: boolea
       }
     }
 
-    // 2. Combine all cloud data with local storage data into a master payload
+    // 3. Combine local + cloud data into a master payload
     const masterPayload = mergePayloads(fetchedPayloads);
 
     // Apply merged result back to local storage
     applyCloudDataToLocalStorage(masterPayload);
 
-    // 3. Save merged master payload to ALL Firestore doc references
+    // 4. Save merged master payload to ALL Firestore doc references
     for (const docRef of refs) {
       try {
         await setDoc(docRef, masterPayload, { merge: true });
@@ -595,7 +607,7 @@ export async function syncWithCloud(userUid?: string): Promise<{ success: boolea
       }
     }
 
-    // 4. Save to Express API endpoint
+    // 5. Save to Express API endpoint
     try {
       await fetch('/api/sync', {
         method: 'POST',
@@ -622,7 +634,7 @@ function triggerAutoSync() {
     if (navigator.onLine) {
       syncWithCloud(auth.currentUser?.uid);
     }
-  }, 1000);
+  }, 100);
 }
 
 export function getImportantLinks(): ImportantLink[] {
@@ -672,20 +684,75 @@ export function exportFullDataJSON(): string {
     certificates: getCertificates(),
     scholarships: getScholarships(),
     panApplications: getPANApplications(),
+    importantLinks: getImportantLinks(),
   };
   return JSON.stringify(data, null, 2);
 }
 
-export function importFullDataJSON(jsonStr: string): boolean {
+export async function importFullDataJSON(jsonStr: string): Promise<boolean> {
   try {
     const data: CloudBackupPayload = JSON.parse(jsonStr);
-    if (data.cscConfig) localStorage.setItem(KEYS.CONFIG, JSON.stringify(data.cscConfig));
-    if (data.customers) localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(data.customers));
-    if (data.transactions) localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(data.transactions));
-    if (data.certificates) localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(data.certificates));
-    if (data.scholarships) localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(data.scholarships));
-    if (data.panApplications) localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(data.panApplications));
-    triggerAutoSync();
+    if (data.cscConfig && data.cscConfig.centreName) {
+      localStorage.setItem(KEYS.CONFIG, JSON.stringify(data.cscConfig));
+    }
+    if (data.customers && Array.isArray(data.customers)) {
+      localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(data.customers));
+    }
+    if (data.transactions && Array.isArray(data.transactions)) {
+      localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(data.transactions));
+    }
+    if (data.certificates && Array.isArray(data.certificates)) {
+      localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(data.certificates));
+    }
+    if (data.scholarships && Array.isArray(data.scholarships)) {
+      localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(data.scholarships));
+    }
+    if (data.panApplications && Array.isArray(data.panApplications)) {
+      localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(data.panApplications));
+    }
+    if (data.importantLinks && Array.isArray(data.importantLinks)) {
+      localStorage.setItem(KEYS.IMPORTANT_LINKS, JSON.stringify(data.importantLinks));
+    }
+
+    // Build master payload and immediately push online to Cloud Firestore
+    const masterPayload: CloudBackupPayload = {
+      lastUpdated: new Date().toISOString(),
+      serverBackupTime: new Date().toISOString(),
+      cscConfig: getCSCConfig(),
+      customers: getCustomers(),
+      transactions: getTransactions(),
+      certificates: getCertificates(),
+      scholarships: getScholarships(),
+      panApplications: getPANApplications(),
+      importantLinks: getImportantLinks(),
+    };
+
+    const activeUid = auth.currentUser?.uid;
+    const refs = getCloudDocRefs(activeUid);
+
+    // Save directly to all cloud Firestore references
+    for (const docRef of refs) {
+      try {
+        await setDoc(docRef, masterPayload);
+      } catch (e) {
+        console.warn('Doc save warning:', e);
+      }
+    }
+
+    // Save to Express API endpoint
+    try {
+      await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(masterPayload),
+      });
+    } catch (e) {
+      console.warn('API sync warning:', e);
+    }
+
+    const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    localStorage.setItem(KEYS.LAST_SYNC, timeStr);
+
     return true;
   } catch (e) {
     console.error('Failed to import JSON data:', e);

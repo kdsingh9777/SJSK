@@ -206,6 +206,7 @@ export interface CSCConfig {
 
 export interface CloudBackupPayload {
   lastUpdated: string;
+  serverBackupTime?: string;
   cscConfig: CSCConfig;
   customers: Customer[];
   transactions: ServiceTransaction[];
