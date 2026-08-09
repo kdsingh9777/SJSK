@@ -165,9 +165,23 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onSuccess }) => {
 
         {/* Error / Success Alerts */}
         {error && (
-          <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-start gap-2.5 text-xs text-rose-300 animate-fadeIn">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-            <span className="leading-relaxed">{error}</span>
+          <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex flex-col gap-2 text-xs text-rose-300 animate-fadeIn">
+            <div className="flex items-start gap-2.5">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <span className="leading-relaxed">{error}</span>
+            </div>
+            {error.includes('already exists') && mode === 'signup' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signin');
+                  setError(null);
+                }}
+                className="mt-1 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg transition self-start shadow-sm"
+              >
+                Switch to Sign In
+              </button>
+            )}
           </div>
         )}
 

@@ -211,6 +211,18 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveTab('imp-links')}
+          className={`flex items-center gap-2 px-3.5 py-2 text-xs md:text-sm font-medium rounded-lg whitespace-nowrap transition ${
+            activeTab === 'imp-links'
+              ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+              : 'text-amber-300 hover:text-white hover:bg-slate-800'
+          }`}
+        >
+          <Globe className="w-4 h-4 text-amber-400" />
+          <span>Imp Links</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('scholarships')}
           className={`flex items-center gap-2 px-3.5 py-2 text-xs md:text-sm font-medium rounded-lg whitespace-nowrap transition ${
             activeTab === 'scholarships'
@@ -280,18 +292,6 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Database className="w-4 h-4" />
           <span>Backup & Sync</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('imp-links')}
-          className={`flex items-center gap-2 px-3.5 py-2 text-xs md:text-sm font-medium rounded-lg whitespace-nowrap transition ${
-            activeTab === 'imp-links'
-              ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
-              : 'text-amber-300 hover:text-white hover:bg-slate-800'
-          }`}
-        >
-          <Globe className="w-4 h-4 text-amber-400" />
-          <span>Imp Links</span>
         </button>
       </nav>
     </header>

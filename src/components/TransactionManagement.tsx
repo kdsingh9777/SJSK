@@ -11,7 +11,11 @@ import {
   Clock, 
   AlertCircle,
   IndianRupee,
-  Filter
+  Filter,
+  Users,
+  PlusCircle,
+  Sparkles,
+  UserCheck
 } from 'lucide-react';
 import { ServiceTransaction, PaymentStatus, WorkStatus, Customer } from '../types';
 import { exportTransactionsToExcel } from '../lib/excel';
@@ -52,6 +56,8 @@ export const TransactionManagement: React.FC<TransactionManagementProps> = ({
   initialOpenModal = false,
   preselectedCustomer = null,
 }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'customers' | 'transactions'>('customers');
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<string>('All');
   const [workFilter, setWorkFilter] = useState<string>('All');
@@ -60,28 +66,29 @@ export const TransactionManagement: React.FC<TransactionManagementProps> = ({
   const [editingTx, setEditingTx] = useState<Partial<ServiceTransaction> | null>(null);
   const [txToDelete, setTxToDelete] = useState<ServiceTransaction | null>(null);
 
-  // Form State
+  // Form State - Default fee is set to 70
   const [customerName, setCustomerName] = useState(preselectedCustomer?.name || '');
   const [customerMobile, setCustomerMobile] = useState(preselectedCustomer?.mobile || '');
   const [customerAadhaar, setCustomerAadhaar] = useState(preselectedCustomer?.aadhaar || '');
   const [customerId, setCustomerId] = useState(preselectedCustomer?.id || '');
   const [serviceName, setServiceName] = useState('Income Certificate');
-  const [fee, setFee] = useState<number>(150);
-  const [amountPaid, setAmountPaid] = useState<number>(150);
+  const [fee, setFee] = useState<number>(70);
+  const [amountPaid, setAmountPaid] = useState<number>(70);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('Paid');
   const [workStatus, setWorkStatus] = useState<WorkStatus>('Completed');
   const [deliveryDate, setDeliveryDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
 
-  const openNewTxModal = () => {
+  const openNewTxModal = (cust?: Customer) => {
+    const targetCust = cust || preselectedCustomer;
     setEditingTx(null);
-    setCustomerName(preselectedCustomer?.name || '');
-    setCustomerMobile(preselectedCustomer?.mobile || '');
-    setCustomerAadhaar(preselectedCustomer?.aadhaar || '');
-    setCustomerId(preselectedCustomer?.id || '');
+    setCustomerName(targetCust?.name || '');
+    setCustomerMobile(targetCust?.mobile || '');
+    setCustomerAadhaar(targetCust?.aadhaar || '');
+    setCustomerId(targetCust?.id || '');
     setServiceName('Income Certificate');
-    setFee(150);
-    setAmountPaid(150);
+    setFee(70);
+    setAmountPaid(70);
     setPaymentStatus('Paid');
     setWorkStatus('Completed');
     setDeliveryDate(new Date().toISOString().split('T')[0]);
@@ -166,6 +173,19 @@ export const TransactionManagement: React.FC<TransactionManagementProps> = ({
     setIsModalOpen(false);
   };
 
+  // Filter Customers
+  const filteredCustomers = customers.filter((c) => {
+    if (!customerSearchQuery.trim()) return true;
+    const q = customerSearchQuery.toLowerCase().trim();
+    return (
+      c.name.toLowerCase().includes(q) ||
+      c.mobile.includes(q) ||
+      (c.fatherName && c.fatherName.toLowerCase().includes(q)) ||
+      (c.aadhaar && c.aadhaar.includes(q)) ||
+      (c.address && c.address.toLowerCase().includes(q))
+    );
+  });
+
   // Filter Transactions
   const filteredTxs = transactions.filter((tx) => {
     const query = searchQuery.toLowerCase();
@@ -214,48 +234,179 @@ export const TransactionManagement: React.FC<TransactionManagementProps> = ({
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search: Receipt No / Customer / Service / Mobile..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-            />
+      {/* Sub Navigation Bar for Customer Database vs Transactions */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+        <button
+          onClick={() => setActiveSubTab('customers')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all ${
+            activeSubTab === 'customers'
+              ? 'bg-amber-500 text-slate-950 shadow-sm border border-amber-500'
+              : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200/80'
+          }`}
+        >
+          <Users className="w-4 h-4 text-slate-950" />
+          <span>Saved Customer Database</span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-600 text-white font-extrabold">
+            {customers.length} Saved
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('transactions')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition-all ${
+            activeSubTab === 'transactions'
+              ? 'bg-amber-500 text-slate-950 shadow-sm border border-amber-500'
+              : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200/80'
+          }`}
+        >
+          <Receipt className="w-4 h-4 text-slate-950" />
+          <span>All Service Receipts & Work History</span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-slate-100 text-slate-700 font-extrabold">
+            {transactions.length}
+          </span>
+        </button>
+      </div>
+
+      {/* VIEW 1: SAVED CUSTOMER DATABASE TABLE */}
+      {activeSubTab === 'customers' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search customer name, mobile, father name, address..."
+                value={customerSearchQuery}
+                onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30 font-medium"
+              />
+            </div>
+
+            <div className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+              <UserCheck className="w-4 h-4 text-emerald-600" />
+              <span>Showing <strong>{filteredCustomers.length}</strong> of <strong>{customers.length}</strong> customers in database</span>
+            </div>
           </div>
 
-          <div>
-            <select
-              value={paymentFilter}
-              onChange={(e) => setPaymentFilter(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/30 font-medium"
-            >
-              <option value="All">All Payment Status</option>
-              <option value="Paid">Paid</option>
-              <option value="Unpaid">Unpaid / Due</option>
-              <option value="Partial">Partial</option>
-            </select>
-          </div>
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                    <th className="py-3.5 px-4">Customer Name & Father</th>
+                    <th className="py-3.5 px-4">Mobile & Aadhaar</th>
+                    <th className="py-3.5 px-4">Full Address</th>
+                    <th className="py-3.5 px-4 text-center">Service History</th>
+                    <th className="py-3.5 px-4 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {filteredCustomers.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-10 text-slate-400 italic">
+                        No customer records found in the database.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCustomers.map((cust) => {
+                      const custTxs = transactions.filter(
+                        (t) => t.customerMobile === cust.mobile || t.customerName.toLowerCase() === cust.name.toLowerCase()
+                      );
+                      return (
+                        <tr key={cust.id} className="hover:bg-amber-50/40 transition">
+                          <td className="py-3.5 px-4">
+                            <div className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                              <span>{cust.name}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-500">
+                              {cust.fatherName ? `Father: ${cust.fatherName}` : 'S/o: N/A'}
+                            </div>
+                          </td>
 
-          <div>
-            <select
-              value={workFilter}
-              onChange={(e) => setWorkFilter(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/30 font-medium"
-            >
-              <option value="All">All Work Status</option>
-              <option value="Pending">Pending</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Completed">Completed</option>
-              <option value="Delivered">Delivered</option>
-            </select>
+                          <td className="py-3.5 px-4">
+                            <div className="font-mono font-bold text-slate-800">Mob: {cust.mobile}</div>
+                            {cust.aadhaar && (
+                              <div className="text-[10px] text-slate-500 font-mono">Aadhaar: {cust.aadhaar}</div>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4 max-w-xs truncate text-slate-600">
+                            {cust.address || '-'}
+                          </td>
+
+                          <td className="py-3.5 px-4 text-center">
+                            <span className="inline-block px-2.5 py-1 bg-slate-100 text-slate-800 rounded-full text-[10px] font-bold">
+                              {custTxs.length} Receipts
+                            </span>
+                          </td>
+
+                          <td className="py-3.5 px-4 text-center">
+                            <button
+                              onClick={() => openNewTxModal(cust)}
+                              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold rounded-xl text-xs shadow-xs transition"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Create Service / Receipt</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* VIEW 2: ALL TRANSACTIONS & RECEIPTS */}
+      {activeSubTab === 'transactions' && (
+        <>
+          {/* Filter and Search Bar */}
+          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search: Receipt No / Customer / Service / Mobile..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                />
+              </div>
+
+              <div>
+                <select
+                  value={paymentFilter}
+                  onChange={(e) => setPaymentFilter(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/30 font-medium"
+                >
+                  <option value="All">All Payment Status</option>
+                  <option value="Paid">Paid</option>
+                  <option value="Unpaid">Unpaid / Due</option>
+                  <option value="Partial">Partial</option>
+                </select>
+              </div>
+
+              <div>
+                <select
+                  value={workFilter}
+                  onChange={(e) => setWorkFilter(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/30 font-medium"
+                >
+                  <option value="All">All Work Status</option>
+                  <option value="Pending">Pending</option>
+                  <option value="In Progress">In Progress</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Delivered">Delivered</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Transactions Table */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">

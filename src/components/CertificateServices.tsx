@@ -67,7 +67,7 @@ export const CertificateServices: React.FC<CertificateServicesProps> = ({
   const [paymentStatus, setPaymentStatus] = useState<'Paid' | 'Unpaid'>('Paid');
   const [deliveryStatus, setDeliveryStatus] = useState<'Delivered' | 'Not Delivered'>('Not Delivered');
   const [applicationNo, setApplicationNo] = useState('');
-  const [fee, setFee] = useState<number>(150);
+  const [fee, setFee] = useState<number>(70);
   const [notes, setNotes] = useState('');
 
   // Mapping Active Tab to CertificateType String
@@ -156,7 +156,7 @@ export const CertificateServices: React.FC<CertificateServicesProps> = ({
     setPaymentStatus('Paid');
     setDeliveryStatus('Not Delivered');
     setApplicationNo(String(Date.now()).slice(-10));
-    setFee(150);
+    setFee(70);
     setNotes('');
     setIsModalOpen(true);
   };
@@ -196,7 +196,7 @@ export const CertificateServices: React.FC<CertificateServicesProps> = ({
       certificateType: certType,
       paymentStatus,
       deliveryStatus,
-      fee: Number(fee) || 150,
+      fee: Number(fee) || 70,
       applicationDate: editingCert?.applicationDate || todayStr,
       targetDeliveryDate: editingCert?.targetDeliveryDate || new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0],
       notes: notes.trim(),
@@ -293,7 +293,7 @@ export const CertificateServices: React.FC<CertificateServicesProps> = ({
         certificateType: importTargetType,
         paymentStatus: String(row.paymentStatus || row.status || '').toLowerCase().includes('paid') ? 'Paid' : 'Paid',
         deliveryStatus: String(row.deliveryStatus || row.status || '').toLowerCase().includes('deliver') ? 'Delivered' : 'Not Delivered',
-        fee: Number(row.fee || row.amount) || 150,
+        fee: Number(row.fee || row.amount) || 70,
         applicationDate: appDate,
         targetDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
         notes: 'Added via Excel Import System',

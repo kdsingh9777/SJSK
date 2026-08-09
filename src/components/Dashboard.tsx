@@ -21,9 +21,12 @@ import {
   Filter,
   Check,
   Phone,
-  User
+  User,
+  MessageSquare
 } from 'lucide-react';
 import { ServiceTransaction, CertificateApplication, Customer, ScholarshipApplication, PANApplication } from '../types';
+import { WhatsAppCustomerModal } from './WhatsAppCustomerModal';
+import { ImportantLinksSection } from './ImportantLinksSection';
 
 interface DashboardProps {
   transactions: ServiceTransaction[];
@@ -56,9 +59,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
 }) => {
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // Modals for pending details
+  // Modals for pending details & WhatsApp
   const [isPendingAppsModalOpen, setIsPendingAppsModalOpen] = useState<boolean>(false);
   const [isPendingDuesModalOpen, setIsPendingDuesModalOpen] = useState<boolean>(false);
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState<boolean>(false);
 
   // Search & Filter state for Pending Apps Modal
   const [pendingAppsSearch, setPendingAppsSearch] = useState<string>('');
@@ -338,8 +342,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
           {/* Quick Action Buttons Grid */}
           <div className="flex flex-wrap items-center gap-2">
             <button
+              onClick={() => setIsWhatsAppModalOpen(true)}
+              className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.02]"
+            >
+              <MessageSquare className="w-4 h-4 text-emerald-100" />
+              <span>WhatsApp Customer</span>
+            </button>
+            <button
               onClick={onOpenNewCustomer}
-              className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold shadow-sm transition-all hover:scale-[1.02]"
+              className="flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all hover:scale-[1.02]"
             >
               <UserPlus className="w-4 h-4" />
               <span>New Customer</span>
@@ -452,6 +463,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </p>
         </div>
       </div>
+
+      {/* Important Links Section (Placed right below Dashboard Top Summary & Revenue Stats) */}
+      <ImportantLinksSection />
 
       {/* Main Content Grid: Recent Transactions & Income/Caste/Domicile Quick Portal */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -970,6 +984,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* WhatsApp Customer Modal */}
+      <WhatsAppCustomerModal
+        isOpen={isWhatsAppModalOpen}
+        onClose={() => setIsWhatsAppModalOpen(false)}
+        customers={customers}
+        certificates={certificates}
+        transactions={transactions}
+        panApplications={panApplications}
+        scholarships={scholarships}
+      />
     </div>
   );
 };
