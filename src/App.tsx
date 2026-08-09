@@ -175,10 +175,10 @@ export default function App() {
   const handleCloudSync = async () => {
     if (!navigator.onLine) return;
     setIsSyncing(true);
-    const res = await syncWithCloud();
+    const res = await syncWithCloud(currentUser?.uid);
     setIsSyncing(false);
     if (res.success) {
-      setLastSyncTime(getLastSyncTime());
+      reloadAllData();
     }
   };
 

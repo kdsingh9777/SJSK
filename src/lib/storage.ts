@@ -40,15 +40,72 @@ export function getCloudDocRef(userUid?: string): DocumentReference {
   return doc(db, 'app_data', 'global_state');
 }
 
+export function mergeLists<T extends { id: string; updatedAt?: string; createdAt?: string }>(
+  localList: T[],
+  cloudList: T[]
+): T[] {
+  const map = new Map<string, T>();
+
+  const safeCloud = Array.isArray(cloudList) ? cloudList : [];
+  const safeLocal = Array.isArray(localList) ? localList : [];
+
+  for (const item of safeCloud) {
+    if (item && item.id) {
+      map.set(item.id, item);
+    }
+  }
+
+  for (const item of safeLocal) {
+    if (!item || !item.id) continue;
+    const existing = map.get(item.id);
+    if (!existing) {
+      map.set(item.id, item);
+    } else {
+      const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+      const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+      if (itemTime >= existingTime) {
+        map.set(item.id, { ...existing, ...item });
+      }
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 export function applyCloudDataToLocalStorage(data: CloudBackupPayload): void {
   if (!data) return;
-  if (data.cscConfig) localStorage.setItem(KEYS.CONFIG, JSON.stringify(data.cscConfig));
-  if (data.customers !== undefined) localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(data.customers));
-  if (data.transactions !== undefined) localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(data.transactions));
-  if (data.certificates !== undefined) localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(data.certificates));
-  if (data.scholarships !== undefined) localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(data.scholarships));
-  if (data.panApplications !== undefined) localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(data.panApplications));
-  if (data.importantLinks !== undefined) localStorage.setItem(KEYS.IMPORTANT_LINKS, JSON.stringify(data.importantLinks));
+
+  if (data.cscConfig && data.cscConfig.centreName) {
+    const currentConfig = getCSCConfig();
+    if (data.cscConfig.centreName !== 'CSC Digital Seva Kendra' || currentConfig.centreName === 'CSC Digital Seva Kendra') {
+      localStorage.setItem(KEYS.CONFIG, JSON.stringify(data.cscConfig));
+    }
+  }
+
+  if (data.customers && data.customers.length > 0) {
+    const merged = mergeLists(getCustomers(), data.customers);
+    localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(merged));
+  }
+  if (data.transactions && data.transactions.length > 0) {
+    const merged = mergeLists(getTransactions(), data.transactions);
+    localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(merged));
+  }
+  if (data.certificates && data.certificates.length > 0) {
+    const merged = mergeLists(getCertificates(), data.certificates);
+    localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(merged));
+  }
+  if (data.scholarships && data.scholarships.length > 0) {
+    const merged = mergeLists(getScholarships(), data.scholarships);
+    localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(merged));
+  }
+  if (data.panApplications && data.panApplications.length > 0) {
+    const merged = mergeLists(getPANApplications(), data.panApplications);
+    localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(merged));
+  }
+  if (data.importantLinks && data.importantLinks.length > 0) {
+    const merged = mergeLists(getImportantLinks(), data.importantLinks);
+    localStorage.setItem(KEYS.IMPORTANT_LINKS, JSON.stringify(merged));
+  }
 
   const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   localStorage.setItem(KEYS.LAST_SYNC, timeStr);
@@ -426,23 +483,73 @@ export function getLastSyncTime(): string | null {
 
 export async function syncWithCloud(userUid?: string): Promise<{ success: boolean; message: string }> {
   try {
+    const activeUid = userUid || auth.currentUser?.uid;
+    const docRef = getCloudDocRef(activeUid);
+
+    let localCustomers = getCustomers();
+    let localTransactions = getTransactions();
+    let localCertificates = getCertificates();
+    let localScholarships = getScholarships();
+    let localPanApps = getPANApplications();
+    let localLinks = getImportantLinks();
+    let config = getCSCConfig();
+
+    // Try reading Firestore doc first to merge any new remote items before writing
+    try {
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const cloudData = docSnap.data() as CloudBackupPayload;
+        if (cloudData) {
+          if (cloudData.customers && cloudData.customers.length > 0) {
+            localCustomers = mergeLists(localCustomers, cloudData.customers);
+            localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(localCustomers));
+          }
+          if (cloudData.transactions && cloudData.transactions.length > 0) {
+            localTransactions = mergeLists(localTransactions, cloudData.transactions);
+            localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(localTransactions));
+          }
+          if (cloudData.certificates && cloudData.certificates.length > 0) {
+            localCertificates = mergeLists(localCertificates, cloudData.certificates);
+            localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(localCertificates));
+          }
+          if (cloudData.scholarships && cloudData.scholarships.length > 0) {
+            localScholarships = mergeLists(localScholarships, cloudData.scholarships);
+            localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(localScholarships));
+          }
+          if (cloudData.panApplications && cloudData.panApplications.length > 0) {
+            localPanApps = mergeLists(localPanApps, cloudData.panApplications);
+            localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(localPanApps));
+          }
+          if (cloudData.importantLinks && cloudData.importantLinks.length > 0) {
+            localLinks = mergeLists(localLinks, cloudData.importantLinks);
+            localStorage.setItem(KEYS.IMPORTANT_LINKS, JSON.stringify(localLinks));
+          }
+          if (cloudData.cscConfig && cloudData.cscConfig.centreName && cloudData.cscConfig.centreName !== 'CSC Digital Seva Kendra') {
+            config = cloudData.cscConfig;
+            localStorage.setItem(KEYS.CONFIG, JSON.stringify(config));
+          }
+        }
+      }
+    } catch (readErr) {
+      console.warn('Pre-sync read notice:', readErr);
+    }
+
     const payload: CloudBackupPayload = {
       lastUpdated: new Date().toISOString(),
-      cscConfig: getCSCConfig(),
-      customers: getCustomers(),
-      transactions: getTransactions(),
-      certificates: getCertificates(),
-      scholarships: getScholarships(),
-      panApplications: getPANApplications(),
-      importantLinks: getImportantLinks(),
+      cscConfig: config,
+      customers: localCustomers,
+      transactions: localTransactions,
+      certificates: localCertificates,
+      scholarships: localScholarships,
+      panApplications: localPanApps,
+      importantLinks: localLinks,
     };
 
-    // Save to Firestore
+    // Save merged payload to Firestore
     try {
-      const docRef = getCloudDocRef(userUid);
       await setDoc(docRef, payload, { merge: true });
     } catch (fsErr) {
-      console.warn('Firestore sync warning:', fsErr);
+      console.warn('Firestore sync write warning:', fsErr);
     }
 
     // Save to Express API endpoint
@@ -470,7 +577,7 @@ function triggerAutoSync() {
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(() => {
     if (navigator.onLine) {
-      syncWithCloud();
+      syncWithCloud(auth.currentUser?.uid);
     }
   }, 1000);
 }
