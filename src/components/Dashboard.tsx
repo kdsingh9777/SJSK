@@ -71,28 +71,61 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [pendingDuesSearch, setPendingDuesSearch] = useState<string>('');
   const [pendingDuesCategory, setPendingDuesCategory] = useState<'All' | 'Transactions' | 'Certificates'>('All');
 
-  // 1. Today's Work Count
-  const todayTransactions = transactions.filter((t) => t.orderDate === todayStr);
-  const todayWorkCount = todayTransactions.length;
+  // 1. Today's Work Count (Aggregated across Services, Certificates, PAN & Scholarships)
+  const todayTransactions = useMemo(() => {
+    return transactions.filter((t) => (t.orderDate && t.orderDate === todayStr) || (t.createdAt && t.createdAt.startsWith(todayStr)));
+  }, [transactions, todayStr]);
 
-  // 2. Today's Earnings
-  const todayEarnings = todayTransactions.reduce((acc, t) => acc + (t.amountPaid || 0), 0);
+  const todayCertificates = useMemo(() => {
+    return certificates.filter((c) => (c.applicationDate && c.applicationDate === todayStr) || (c.createdAt && c.createdAt.startsWith(todayStr)));
+  }, [certificates, todayStr]);
 
-  // 3. Total Pending Applications
+  const todayPAN = useMemo(() => {
+    return panApplications.filter((p) => (p.date && p.date === todayStr) || (p.createdAt && p.createdAt.startsWith(todayStr)));
+  }, [panApplications, todayStr]);
+
+  const todayScholarships = useMemo(() => {
+    return scholarships.filter((s) => (s.applicationDate && s.applicationDate === todayStr) || (s.createdAt && s.createdAt.startsWith(todayStr)));
+  }, [scholarships, todayStr]);
+
+  const todayWorkCount = todayTransactions.length + todayCertificates.length + todayPAN.length + todayScholarships.length;
+
+  // 2. Today's Earnings (Aggregated across Services, Certificates, PAN & Scholarships)
+  const todayEarnings = useMemo(() => {
+    const txEarn = todayTransactions.reduce((acc, t) => acc + (t.amountPaid || 0), 0);
+    const certEarn = todayCertificates.reduce((acc, c) => acc + (String(c.paymentStatus).toLowerCase() === 'paid' ? (c.fee || 0) : 0), 0);
+    const panEarn = todayPAN.reduce((acc) => acc + 107, 0);
+    const schEarn = todayScholarships.reduce((acc, s) => acc + (s.amount || 0), 0);
+    return txEarn + certEarn + panEarn + schEarn;
+  }, [todayTransactions, todayCertificates, todayPAN, todayScholarships]);
+
+  // 3. Total Pending Applications (Case-insensitive & fallback resilient)
   const pendingCertificates = useMemo(() => {
-    return certificates.filter((c) => c.deliveryStatus === 'Not Delivered');
+    return certificates.filter((c) => !c.deliveryStatus || !String(c.deliveryStatus).toLowerCase().includes('deliver'));
   }, [certificates]);
 
   const pendingTransactions = useMemo(() => {
-    return transactions.filter((t) => t.workStatus === 'Pending' || t.workStatus === 'In Progress');
+    return transactions.filter((t) => {
+      if (!t.workStatus) return true;
+      const s = String(t.workStatus).toLowerCase().trim();
+      return s !== 'completed' && s !== 'delivered';
+    });
   }, [transactions]);
 
   const pendingPAN = useMemo(() => {
-    return panApplications.filter((p) => p.status === 'Pending');
+    return panApplications.filter((p) => {
+      if (!p.status) return true;
+      const s = String(p.status).toLowerCase().trim();
+      return s !== 'approved' && s !== 'completed' && s !== 'delivered' && s !== 'issued';
+    });
   }, [panApplications]);
 
   const pendingScholarships = useMemo(() => {
-    return scholarships.filter((s) => s.status === 'Pending');
+    return scholarships.filter((item) => {
+      if (!item.status) return true;
+      const statusStr = String(item.status).toLowerCase().trim();
+      return statusStr !== 'approved' && statusStr !== 'completed';
+    });
   }, [scholarships]);
 
   const totalPendingApplicationsCount = 
@@ -103,11 +136,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // 4. Total Pending Dues (Uncollected Balances)
   const pendingDueTransactions = useMemo(() => {
-    return transactions.filter((t) => (t.balanceDue || 0) > 0 || t.paymentStatus === 'Pending' || t.paymentStatus === 'Unpaid');
+    return transactions.filter((t) => {
+      const pStatus = String(t.paymentStatus || '').toLowerCase();
+      return (t.balanceDue || 0) > 0 || pStatus === 'unpaid' || pStatus === 'pending';
+    });
   }, [transactions]);
 
   const pendingDueCertificates = useMemo(() => {
-    return certificates.filter((c) => c.paymentStatus === 'Unpaid' || ((c.fee || 0) > 0 && c.paymentStatus !== 'Paid'));
+    return certificates.filter((c) => {
+      const pStatus = String(c.paymentStatus || '').toLowerCase();
+      return pStatus === 'unpaid' || pStatus === 'pending' || (pStatus !== 'paid' && (c.fee || 0) > 0);
+    });
   }, [certificates]);
 
   const totalPendingPaymentsAmount = 
@@ -562,32 +601,39 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           <div className="space-y-3">
-            {certificates.slice(0, 4).map((cert) => (
-              <div key={cert.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-1.5">
+            {/* Quick Summary Strip */}
+            <div className="p-2.5 bg-indigo-50/70 rounded-xl border border-indigo-100/80 flex items-center justify-between text-xs font-semibold text-indigo-950">
+              <span>Total Apps: <strong className="font-bold text-indigo-900">{certificates.length}</strong></span>
+              <span>Delivered: <strong className="text-emerald-700 font-bold">{certificates.filter(c => String(c.deliveryStatus || '').toLowerCase().includes('deliver')).length}</strong></span>
+              <span>Pending: <strong className="text-amber-700 font-bold">{certificates.filter(c => !String(c.deliveryStatus || '').toLowerCase().includes('deliver')).length}</strong></span>
+            </div>
+
+            {certificates.slice(0, 5).map((cert) => (
+              <div key={cert.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-1.5 hover:bg-slate-100/80 transition">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
                     {cert.certificateType}
                   </span>
                   <span
                     className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      cert.deliveryStatus === 'Delivered'
+                      String(cert.deliveryStatus || '').toLowerCase().includes('deliver')
                         ? 'bg-emerald-100 text-emerald-800'
                         : 'bg-amber-100 text-amber-800'
                     }`}
                   >
-                    {cert.deliveryStatus === 'Delivered' ? 'Delivered' : 'Not Delivered'}
+                    {String(cert.deliveryStatus || '').toLowerCase().includes('deliver') ? 'Delivered' : 'Not Delivered'}
                   </span>
                 </div>
 
                 <div className="text-xs font-semibold text-slate-900">{cert.applicantName}</div>
                 <div className="text-[11px] text-slate-500 flex items-center justify-between">
                   <span>Father: {cert.fatherName}</span>
-                  <span className="font-mono font-bold text-slate-700">₹{cert.fee}</span>
+                  <span className="font-mono font-bold text-slate-700">₹{cert.fee || 0}</span>
                 </div>
                 <div className="text-[10px] text-slate-400 flex items-center justify-between">
                   <span>App No: {cert.applicationNo}</span>
-                  <span className={cert.paymentStatus === 'Paid' ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'}>
-                    {cert.paymentStatus === 'Paid' ? 'Paid' : 'Unpaid'}
+                  <span className={String(cert.paymentStatus || '').toLowerCase() === 'paid' ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'}>
+                    {String(cert.paymentStatus || '').toLowerCase() === 'paid' ? 'Paid' : 'Unpaid'}
                   </span>
                 </div>
               </div>

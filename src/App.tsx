@@ -77,13 +77,13 @@ export default function App() {
   const [globalSearchQuery, setGlobalSearchQuery] = useState<string>('');
 
   // App Data State
-  const [config, setConfig] = useState<CSCConfig>(getCSCConfig());
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [transactions, setTransactions] = useState<ServiceTransaction[]>([]);
-  const [certificates, setCertificates] = useState<CertificateApplication[]>([]);
-  const [scholarships, setScholarships] = useState<ScholarshipApplication[]>([]);
-  const [panApplications, setPanApplications] = useState<PANApplication[]>([]);
-  const [scholarshipActivities, setScholarshipActivities] = useState<ScholarshipActivity[]>([]);
+  const [config, setConfig] = useState<CSCConfig>(() => getCSCConfig());
+  const [customers, setCustomers] = useState<Customer[]>(() => getCustomers());
+  const [transactions, setTransactions] = useState<ServiceTransaction[]>(() => getTransactions());
+  const [certificates, setCertificates] = useState<CertificateApplication[]>(() => getCertificates());
+  const [scholarships, setScholarships] = useState<ScholarshipApplication[]>(() => getScholarships());
+  const [panApplications, setPanApplications] = useState<PANApplication[]>(() => getPANApplications());
+  const [scholarshipActivities, setScholarshipActivities] = useState<ScholarshipActivity[]>(() => getScholarshipActivities());
 
   // Modals
   const [selectedReceiptTx, setSelectedReceiptTx] = useState<ReceiptData | ServiceTransaction | null>(null);
