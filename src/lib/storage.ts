@@ -21,335 +21,346 @@ import {
 import { db, auth } from './firebase';
 import { doc, getDoc, setDoc, onSnapshot, DocumentReference } from 'firebase/firestore';
 
-const KEYS = {
-  CONFIG: 'csc_config_v1',
-  CUSTOMERS: 'csc_customers_v1',
-  TRANSACTIONS: 'csc_transactions_v1',
-  CERTIFICATES: 'csc_certificates_v1',
-  SCHOLARSHIPS: 'csc_scholarships_v1',
-  PAN_APPLICATIONS: 'csc_pan_applications_v1',
-  IMPORTANT_LINKS: 'csc_important_links_v1',
-  LAST_SYNC: 'csc_last_sync_v1',
-};
-
-export function getCloudDocRefs(userUid?: string): DocumentReference[] {
-  const refs: DocumentReference[] = [doc(db, 'app_data', 'global_state')];
-  const uid = userUid || auth.currentUser?.uid;
-  if (uid && uid !== 'global_state') {
-    refs.push(doc(db, 'app_data', uid));
-  }
-  return refs;
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
 }
 
-export function getCloudDocRef(userUid?: string): DocumentReference {
-  const uid = userUid || auth.currentUser?.uid;
-  if (uid) {
-    return doc(db, 'app_data', uid);
-  }
-  return doc(db, 'app_data', 'global_state');
-}
-
-export function mergeLists<T extends { id: string; updatedAt?: string; createdAt?: string }>(
-  localList: T[],
-  cloudList: T[]
-): T[] {
-  const map = new Map<string, T>();
-
-  const safeCloud = Array.isArray(cloudList) ? cloudList : [];
-  const safeLocal = Array.isArray(localList) ? localList : [];
-
-  for (const item of safeCloud) {
-    if (item && item.id) {
-      map.set(item.id, item);
-    }
-  }
-
-  for (const item of safeLocal) {
-    if (!item || !item.id) continue;
-    const existing = map.get(item.id);
-    if (!existing) {
-      map.set(item.id, item);
-    } else {
-      const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
-      const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
-      if (itemTime >= existingTime) {
-        map.set(item.id, { ...existing, ...item });
-      }
-    }
-  }
-
-  return Array.from(map.values());
-}
-
-export function applyCloudDataToLocalStorage(data: CloudBackupPayload): void {
-  if (!data) return;
-
-  if (data.cscConfig && data.cscConfig.centreName) {
-    const currentConfig = getCSCConfig();
-    const isDataDefault = data.cscConfig.centreName === 'CSC Digital Seva Kendra' && data.cscConfig.vleId === 'CSC-UP-12345678';
-    const isCurrentDefault = currentConfig.centreName === 'CSC Digital Seva Kendra' && currentConfig.vleId === 'CSC-UP-12345678';
-
-    if (!isDataDefault || isCurrentDefault) {
-      localStorage.setItem(KEYS.CONFIG, JSON.stringify(data.cscConfig));
-    }
-  }
-
-  if (data.customers && data.customers.length > 0) {
-    const merged = mergeLists(getCustomers(), data.customers);
-    localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(merged));
-  }
-  if (data.transactions && data.transactions.length > 0) {
-    const merged = mergeLists(getTransactions(), data.transactions);
-    localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(merged));
-  }
-  if (data.certificates && data.certificates.length > 0) {
-    const merged = mergeLists(getCertificates(), data.certificates);
-    localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(merged));
-  }
-  if (data.scholarships && data.scholarships.length > 0) {
-    const merged = mergeLists(getScholarships(), data.scholarships);
-    localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(merged));
-  }
-  if (data.panApplications && data.panApplications.length > 0) {
-    const merged = mergeLists(getPANApplications(), data.panApplications);
-    localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(merged));
-  }
-  if (data.importantLinks && data.importantLinks.length > 0) {
-    const merged = mergeLists(getImportantLinks(), data.importantLinks);
-    localStorage.setItem(KEYS.IMPORTANT_LINKS, JSON.stringify(merged));
-  }
-
-  const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  localStorage.setItem(KEYS.LAST_SYNC, timeStr);
-}
-
-// Helper to merge multiple payload objects into one master payload
-export function mergePayloads(payloads: (CloudBackupPayload | null | undefined)[]): CloudBackupPayload {
-  let config = getCSCConfig();
-  let customers = getCustomers();
-  let transactions = getTransactions();
-  let certificates = getCertificates();
-  let scholarships = getScholarships();
-  let panApplications = getPANApplications();
-  let importantLinks = getImportantLinks();
-
-  for (const p of payloads) {
-    if (!p) continue;
-    if (p.cscConfig && p.cscConfig.centreName) {
-      const isPDefault = p.cscConfig.centreName === 'CSC Digital Seva Kendra' && p.cscConfig.vleId === 'CSC-UP-12345678';
-      const isConfigDefault = config.centreName === 'CSC Digital Seva Kendra' && config.vleId === 'CSC-UP-12345678';
-      if (!isPDefault || isConfigDefault) {
-        config = p.cscConfig;
-      }
-    }
-    if (p.customers && p.customers.length > 0) {
-      customers = mergeLists(customers, p.customers);
-    }
-    if (p.transactions && p.transactions.length > 0) {
-      transactions = mergeLists(transactions, p.transactions);
-    }
-    if (p.certificates && p.certificates.length > 0) {
-      certificates = mergeLists(certificates, p.certificates);
-    }
-    if (p.scholarships && p.scholarships.length > 0) {
-      scholarships = mergeLists(scholarships, p.scholarships);
-    }
-    if (p.panApplications && p.panApplications.length > 0) {
-      panApplications = mergeLists(panApplications, p.panApplications);
-    }
-    if (p.importantLinks && p.importantLinks.length > 0) {
-      importantLinks = mergeLists(importantLinks, p.importantLinks);
-    }
-  }
-
-  return {
-    lastUpdated: new Date().toISOString(),
-    cscConfig: config,
-    customers,
-    transactions,
-    certificates,
-    scholarships,
-    panApplications,
-    importantLinks,
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
   };
 }
 
-// Initialize default storage if empty
-export function initLocalStorage(): void {
-  if (!localStorage.getItem(KEYS.CONFIG)) {
-    localStorage.setItem(KEYS.CONFIG, JSON.stringify(defaultCSCConfig));
-  }
-  if (!localStorage.getItem(KEYS.CUSTOMERS)) {
-    localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(initialCustomers));
-  }
-  if (!localStorage.getItem(KEYS.TRANSACTIONS)) {
-    localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(initialTransactions));
-  }
-  if (!localStorage.getItem(KEYS.CERTIFICATES)) {
-    localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(initialCertificates));
-  }
-  if (!localStorage.getItem(KEYS.SCHOLARSHIPS)) {
-    localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(initialScholarships));
-  }
-  if (!localStorage.getItem(KEYS.PAN_APPLICATIONS)) {
-    localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(initialPANApplications));
-  }
-  if (!localStorage.getItem(KEYS.IMPORTANT_LINKS)) {
-    localStorage.setItem(KEYS.IMPORTANT_LINKS, JSON.stringify(defaultImportantLinks));
-  }
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error:', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
 }
 
-// Fetch global state from Firestore or server backup
-export async function fetchCloudBackupData(userUid?: string): Promise<CloudBackupPayload | null> {
-  try {
-    const refs = getCloudDocRefs(userUid);
-    const fetchedPayloads: (CloudBackupPayload | null)[] = [];
+// In-memory active user dataset
+let activeUserPayload: CloudBackupPayload | null = null;
+let currentActiveUid: string | null = null;
 
-    // 1. Fetch all Firestore refs
-    for (const docRef of refs) {
+function getUserStorageKey(uid: string): string {
+  return `csc_user_data_v2_${uid}`;
+}
+
+export function getUserDocRef(userUid?: string): DocumentReference {
+  const uid = userUid || auth.currentUser?.uid;
+  if (!uid) {
+    throw new Error('User authentication UID is required for Firestore operations.');
+  }
+  return doc(db, 'users', uid);
+}
+
+// Clear in-memory payload on logout
+export function clearUserSession(): void {
+  activeUserPayload = null;
+  currentActiveUid = null;
+}
+
+export function initLocalStorage(): void {
+  // No-op for global defaults, data is bound to user UID
+}
+
+function getActivePayload(uid?: string): CloudBackupPayload {
+  const targetUid = uid || auth.currentUser?.uid || currentActiveUid;
+  if (activeUserPayload && currentActiveUid === targetUid) {
+    return activeUserPayload;
+  }
+
+  if (targetUid) {
+    const raw = localStorage.getItem(getUserStorageKey(targetUid));
+    if (raw) {
       try {
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          fetchedPayloads.push(docSnap.data() as CloudBackupPayload);
-        }
-      } catch (e) {
-        console.warn('Doc fetch notice:', e);
+        const parsed = JSON.parse(raw);
+        activeUserPayload = parsed;
+        currentActiveUid = targetUid;
+        return parsed;
+      } catch {
+        // Fallback
       }
     }
+  }
 
-    // 2. Fetch server endpoint
-    try {
-      const res = await fetch('/api/backup');
-      if (res.ok) {
-        const json = await res.json();
-        if (json && json.cscConfig) {
-          fetchedPayloads.push(json as CloudBackupPayload);
+  // Fallback empty default payload for unauthenticated or initializing user
+  return {
+    lastUpdated: new Date().toISOString(),
+    cscConfig: defaultCSCConfig,
+    customers: [],
+    transactions: [],
+    certificates: [],
+    scholarships: [],
+    panApplications: [],
+    importantLinks: defaultImportantLinks,
+  };
+}
+
+/**
+ * Save draft payload to Firestore FIRST.
+ * ONLY after Firestore write succeeds, update local cache and in-memory payload.
+ * If internet is offline or Firestore write fails, throw error and DO NOT touch local cache.
+ */
+async function savePayloadToFirestoreAndCache(draftPayload: CloudBackupPayload, targetUid?: string): Promise<void> {
+  const uid = targetUid || auth.currentUser?.uid || currentActiveUid;
+  if (!uid) {
+    throw new Error('User authentication required to save changes.');
+  }
+
+  if (!navigator.onLine) {
+    throw new Error('🔴 You are not connected to the internet. Please check your internet connection.');
+  }
+
+  draftPayload.lastUpdated = new Date().toISOString();
+
+  // 1. Write to Firestore FIRST
+  try {
+    const userDocRef = getUserDocRef(uid);
+    await setDoc(userDocRef, draftPayload, { merge: true });
+  } catch (err: any) {
+    console.error('Firestore write failed:', err);
+    throw new Error('Unable to save data. Please check your internet connection and try again.');
+  }
+
+  // 2. ONLY AFTER Firestore write succeeds: update local cache & active in-memory payload
+  activeUserPayload = JSON.parse(JSON.stringify(draftPayload));
+  currentActiveUid = uid;
+  localStorage.setItem(getUserStorageKey(uid), JSON.stringify(activeUserPayload));
+
+  const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  localStorage.setItem('csc_last_sync_time', timeStr);
+}
+
+// Fetch primary user cloud data from Firestore
+export async function fetchCloudBackupData(userUid?: string): Promise<CloudBackupPayload | null> {
+  const uid = userUid || auth.currentUser?.uid;
+  if (!uid) return null;
+
+  try {
+    const userDocRef = getUserDocRef(uid);
+    const docSnap = await getDoc(userDocRef);
+
+    if (docSnap.exists()) {
+      const cloudData = docSnap.data() as CloudBackupPayload;
+      activeUserPayload = {
+        lastUpdated: cloudData.lastUpdated || new Date().toISOString(),
+        cscConfig: cloudData.cscConfig || defaultCSCConfig,
+        customers: Array.isArray(cloudData.customers) ? cloudData.customers : [],
+        transactions: Array.isArray(cloudData.transactions) ? cloudData.transactions : [],
+        certificates: Array.isArray(cloudData.certificates) ? cloudData.certificates : [],
+        scholarships: Array.isArray(cloudData.scholarships) ? cloudData.scholarships : [],
+        panApplications: Array.isArray(cloudData.panApplications) ? cloudData.panApplications : [],
+        importantLinks: Array.isArray(cloudData.importantLinks) ? cloudData.importantLinks : defaultImportantLinks,
+      };
+      currentActiveUid = uid;
+      localStorage.setItem(getUserStorageKey(uid), JSON.stringify(activeUserPayload));
+      return activeUserPayload;
+    } else {
+      // First-time user setup in Firestore
+      const cached = localStorage.getItem(getUserStorageKey(uid));
+      let initialPayload: CloudBackupPayload;
+
+      if (cached) {
+        try {
+          initialPayload = JSON.parse(cached);
+        } catch {
+          initialPayload = {
+            lastUpdated: new Date().toISOString(),
+            cscConfig: defaultCSCConfig,
+            customers: initialCustomers,
+            transactions: initialTransactions,
+            certificates: initialCertificates,
+            scholarships: initialScholarships,
+            panApplications: initialPANApplications,
+            importantLinks: defaultImportantLinks,
+          };
+        }
+      } else {
+        initialPayload = {
+          lastUpdated: new Date().toISOString(),
+          cscConfig: defaultCSCConfig,
+          customers: initialCustomers,
+          transactions: initialTransactions,
+          certificates: initialCertificates,
+          scholarships: initialScholarships,
+          panApplications: initialPANApplications,
+          importantLinks: defaultImportantLinks,
+        };
+      }
+
+      if (navigator.onLine) {
+        try {
+          await setDoc(userDocRef, initialPayload);
+        } catch (err) {
+          console.warn('Initial user doc create notice:', err);
         }
       }
-    } catch (e) {
-      console.warn('Backup fetch notice:', e);
-    }
 
-    if (fetchedPayloads.length > 0) {
-      const masterPayload = mergePayloads(fetchedPayloads);
-      applyCloudDataToLocalStorage(masterPayload);
-      return masterPayload;
+      activeUserPayload = initialPayload;
+      currentActiveUid = uid;
+      localStorage.setItem(getUserStorageKey(uid), JSON.stringify(initialPayload));
+      return initialPayload;
     }
-  } catch (err) {
-    console.warn('Failed to fetch cloud backup data:', err);
+  } catch (err: any) {
+    if (err?.code === 'unavailable' || err?.message?.includes('offline')) {
+      console.warn('Network offline or client unavailable, falling back to local cached data');
+    } else {
+      console.warn('Could not fetch user cloud data:', err?.message || err);
+    }
+    const cached = localStorage.getItem(getUserStorageKey(uid));
+    if (cached) {
+      try {
+        activeUserPayload = JSON.parse(cached);
+        currentActiveUid = uid;
+        return activeUserPayload;
+      } catch {
+        // Ignore
+      }
+    }
   }
   return null;
 }
 
-// Subscribe to real-time changes across devices
-export function subscribeToRealtimeSync(onDataChanged: () => void, userUid?: string): () => void {
-  const unsubscribers: (() => void)[] = [];
-  try {
-    const refs = getCloudDocRefs(userUid);
-    for (const docRef of refs) {
-      const unsub = onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data() as CloudBackupPayload;
-          if (data && (data.cscConfig || data.customers || data.transactions)) {
-            applyCloudDataToLocalStorage(data);
-            onDataChanged();
-          }
-        }
-      }, (error) => {
-        console.warn('Realtime sync subscription notice:', error);
-      });
-      unsubscribers.push(unsub);
-    }
-  } catch (err) {
-    console.warn('Realtime sync error:', err);
+// Subscribe to real-time sync for current authenticated user
+export function subscribeToRealtimeSync(onDataChanged: (data?: CloudBackupPayload) => void, userUid?: string): () => void {
+  const uid = userUid || auth.currentUser?.uid;
+  if (!uid) {
+    return () => {};
   }
 
-  return () => {
-    unsubscribers.forEach((fn) => fn());
-  };
+  try {
+    const userDocRef = getUserDocRef(uid);
+    const unsub = onSnapshot(userDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const cloudData = docSnap.data() as CloudBackupPayload;
+        activeUserPayload = {
+          lastUpdated: cloudData.lastUpdated || new Date().toISOString(),
+          cscConfig: cloudData.cscConfig || defaultCSCConfig,
+          customers: Array.isArray(cloudData.customers) ? cloudData.customers : [],
+          transactions: Array.isArray(cloudData.transactions) ? cloudData.transactions : [],
+          certificates: Array.isArray(cloudData.certificates) ? cloudData.certificates : [],
+          scholarships: Array.isArray(cloudData.scholarships) ? cloudData.scholarships : [],
+          panApplications: Array.isArray(cloudData.panApplications) ? cloudData.panApplications : [],
+          importantLinks: Array.isArray(cloudData.importantLinks) ? cloudData.importantLinks : defaultImportantLinks,
+        };
+        currentActiveUid = uid;
+        localStorage.setItem(getUserStorageKey(uid), JSON.stringify(activeUserPayload));
+        onDataChanged(activeUserPayload);
+      }
+    }, (error) => {
+      console.warn('Realtime listener notice:', error);
+    });
+
+    return unsub;
+  } catch (err) {
+    console.warn('Subscribe to realtime error:', err);
+    return () => {};
+  }
 }
 
 export function getCSCConfig(): CSCConfig {
-  try {
-    const raw = localStorage.getItem(KEYS.CONFIG);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed.centreName === 'CSC Digital Seva Kendra') {
-        parsed.centreName = 'Shaurya Jan Sewa Kendra';
-        localStorage.setItem(KEYS.CONFIG, JSON.stringify(parsed));
-      }
-      return parsed;
-    }
-    return defaultCSCConfig;
-  } catch {
-    return defaultCSCConfig;
+  const payload = getActivePayload();
+  if (payload.cscConfig && payload.cscConfig.centreName === 'CSC Digital Seva Kendra') {
+    payload.cscConfig.centreName = 'Shaurya Jan Sewa Kendra';
   }
+  return payload.cscConfig || defaultCSCConfig;
 }
 
-export function saveCSCConfig(config: CSCConfig): void {
-  localStorage.setItem(KEYS.CONFIG, JSON.stringify(config));
-  triggerAutoSync();
+export async function saveCSCConfig(config: CSCConfig): Promise<CSCConfig> {
+  const currentPayload = getActivePayload();
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    cscConfig: config,
+  };
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.cscConfig;
 }
 
 export function getCustomers(): Customer[] {
-  try {
-    const raw = localStorage.getItem(KEYS.CUSTOMERS);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return getActivePayload().customers || [];
 }
 
-export function saveCustomer(customer: Customer): Customer[] {
-  const current = getCustomers();
-  const index = current.findIndex((c) => c.id === customer.id);
-  let updated: Customer[];
+export async function saveCustomer(customer: Customer): Promise<Customer[]> {
+  const currentPayload = getActivePayload();
+  const currentList = [...(currentPayload.customers || [])];
+  const index = currentList.findIndex((c) => c.id === customer.id);
+  
   if (index >= 0) {
-    updated = [...current];
-    updated[index] = { ...customer, updatedAt: new Date().toISOString() };
+    currentList[index] = { ...customer, updatedAt: new Date().toISOString() };
   } else {
-    updated = [
-      {
-        ...customer,
-        id: customer.id || `cust-${Date.now()}`,
-        createdAt: customer.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      ...current,
-    ];
+    currentList.unshift({
+      ...customer,
+      id: customer.id || `cust-${Date.now()}`,
+      createdAt: customer.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
   }
-  localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
+
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    customers: currentList,
+  };
+
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.customers;
 }
 
-export function deleteCustomer(id: string): Customer[] {
-  const current = getCustomers();
-  const updated = current.filter((c) => c.id !== id);
-  localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
+export async function deleteCustomer(id: string): Promise<Customer[]> {
+  const currentPayload = getActivePayload();
+  const currentList = (currentPayload.customers || []).filter((c) => c.id !== id);
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    customers: currentList,
+  };
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.customers;
 }
 
 export function getTransactions(): ServiceTransaction[] {
-  try {
-    const raw = localStorage.getItem(KEYS.TRANSACTIONS);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return getActivePayload().transactions || [];
 }
 
-export function saveTransaction(tx: ServiceTransaction): ServiceTransaction[] {
-  const current = getTransactions();
-  const index = current.findIndex((t) => t.id === tx.id);
-  let updated: ServiceTransaction[];
+export async function saveTransaction(tx: ServiceTransaction): Promise<ServiceTransaction[]> {
+  const currentPayload = getActivePayload();
+  const currentList = [...(currentPayload.transactions || [])];
+  const index = currentList.findIndex((t) => t.id === tx.id);
+
   if (index >= 0) {
-    updated = [...current];
-    updated[index] = tx;
+    currentList[index] = tx;
   } else {
     const todayStr = new Date().toISOString().split('T')[0];
-    const receiptNo = tx.receiptNo || `CSC-${new Date().getFullYear()}-${String(current.length + 1).padStart(3, '0')}`;
+    const receiptNo = tx.receiptNo || `CSC-${new Date().getFullYear()}-${String(currentList.length + 1).padStart(3, '0')}`;
     const newTx: ServiceTransaction = {
       ...tx,
       id: tx.id || `tx-${Date.now()}`,
@@ -359,37 +370,40 @@ export function saveTransaction(tx: ServiceTransaction): ServiceTransaction[] {
       createdAt: new Date().toISOString(),
       isSync: true,
     };
-    updated = [newTx, ...current];
+    currentList.unshift(newTx);
   }
-  localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
+
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    transactions: currentList,
+  };
+
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.transactions;
 }
 
-export function deleteTransaction(id: string): ServiceTransaction[] {
-  const current = getTransactions();
-  const updated = current.filter((t) => t.id !== id);
-  localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
+export async function deleteTransaction(id: string): Promise<ServiceTransaction[]> {
+  const currentPayload = getActivePayload();
+  const currentList = (currentPayload.transactions || []).filter((t) => t.id !== id);
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    transactions: currentList,
+  };
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.transactions;
 }
 
 export function getCertificates(): CertificateApplication[] {
-  try {
-    const raw = localStorage.getItem(KEYS.CERTIFICATES);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return getActivePayload().certificates || [];
 }
 
-export function saveCertificate(cert: CertificateApplication): CertificateApplication[] {
-  const current = getCertificates();
-  const index = current.findIndex((c) => c.id === cert.id);
-  let updated: CertificateApplication[];
+export async function saveCertificate(cert: CertificateApplication): Promise<CertificateApplication[]> {
+  const currentPayload = getActivePayload();
+  const currentList = [...(currentPayload.certificates || [])];
+  const index = currentList.findIndex((c) => c.id === cert.id);
+
   if (index >= 0) {
-    updated = [...current];
-    updated[index] = cert;
+    currentList[index] = cert;
   } else {
     const newCert: CertificateApplication = {
       ...cert,
@@ -397,43 +411,59 @@ export function saveCertificate(cert: CertificateApplication): CertificateApplic
       applicationNo: cert.applicationNo || String(Date.now()).slice(-10),
       createdAt: new Date().toISOString(),
     };
-    updated = [newCert, ...current];
+    currentList.unshift(newCert);
   }
-  localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
+
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    certificates: currentList,
+  };
+
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.certificates;
 }
 
-export function deleteCertificate(id: string): CertificateApplication[] {
+export async function deleteMultipleCertificates(ids: string[]): Promise<CertificateApplication[]> {
+  const currentPayload = getActivePayload();
+  const idSet = new Set(ids);
+  const currentList = (currentPayload.certificates || []).filter((c) => !idSet.has(c.id));
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    certificates: currentList,
+  };
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.certificates;
+}
+
+export async function deleteCertificate(id: string): Promise<CertificateApplication[]> {
   return deleteMultipleCertificates([id]);
 }
 
-export function deleteMultipleCertificates(ids: string[]): CertificateApplication[] {
-  const current = getCertificates();
-  const idSet = new Set(ids);
-  const updated = current.filter((c) => !idSet.has(c.id));
-  localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
+export async function bulkAddCertificates(items: CertificateApplication[]): Promise<CertificateApplication[]> {
+  const currentPayload = getActivePayload();
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    certificates: [...items, ...(currentPayload.certificates || [])],
+  };
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.certificates;
 }
 
-// ================= SCHOLARSHIP PORTAL STORAGE =================
+export async function saveCertificatesBulk(items: CertificateApplication[]): Promise<CertificateApplication[]> {
+  return bulkAddCertificates(items);
+}
+
 export function getScholarships(): ScholarshipApplication[] {
-  try {
-    const raw = localStorage.getItem(KEYS.SCHOLARSHIPS);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return getActivePayload().scholarships || [];
 }
 
-export function saveScholarship(scholarship: ScholarshipApplication): ScholarshipApplication[] {
-  const current = getScholarships();
-  const index = current.findIndex((s) => s.id === scholarship.id);
-  let updated: ScholarshipApplication[];
+export async function saveScholarship(scholarship: ScholarshipApplication): Promise<ScholarshipApplication[]> {
+  const currentPayload = getActivePayload();
+  const currentList = [...(currentPayload.scholarships || [])];
+  const index = currentList.findIndex((s) => s.id === scholarship.id);
+
   if (index >= 0) {
-    updated = [...current];
-    updated[index] = scholarship;
+    currentList[index] = scholarship;
   } else {
     const newSch: ScholarshipApplication = {
       ...scholarship,
@@ -441,22 +471,45 @@ export function saveScholarship(scholarship: ScholarshipApplication): Scholarshi
       applicationNo: scholarship.applicationNo || `SCH2026-${String(Date.now()).slice(-5)}`,
       createdAt: new Date().toISOString(),
     };
-    updated = [newSch, ...current];
+    currentList.unshift(newSch);
   }
-  localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
+
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    scholarships: currentList,
+  };
+
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.scholarships;
 }
 
-export function bulkAddScholarships(items: ScholarshipApplication[]): ScholarshipApplication[] {
-  const current = getScholarships();
-  const updated = [...items, ...current];
-  localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
+export async function deleteMultipleScholarships(ids: string[]): Promise<ScholarshipApplication[]> {
+  const currentPayload = getActivePayload();
+  const idSet = new Set(ids);
+  const currentList = (currentPayload.scholarships || []).filter((s) => !idSet.has(s.id));
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    scholarships: currentList,
+  };
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.scholarships;
 }
 
-export function saveScholarshipsBulk(items: ScholarshipApplication[]): ScholarshipApplication[] {
+export async function deleteScholarship(id: string): Promise<ScholarshipApplication[]> {
+  return deleteMultipleScholarships([id]);
+}
+
+export async function bulkAddScholarships(items: ScholarshipApplication[]): Promise<ScholarshipApplication[]> {
+  const currentPayload = getActivePayload();
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    scholarships: [...items, ...(currentPayload.scholarships || [])],
+  };
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.scholarships;
+}
+
+export async function saveScholarshipsBulk(items: ScholarshipApplication[]): Promise<ScholarshipApplication[]> {
   return bulkAddScholarships(items);
 }
 
@@ -475,36 +528,17 @@ export function getScholarshipActivities(): ScholarshipActivity[] {
   return activities.slice(0, 10);
 }
 
-export function deleteScholarship(id: string): ScholarshipApplication[] {
-  return deleteMultipleScholarships([id]);
-}
-
-export function deleteMultipleScholarships(ids: string[]): ScholarshipApplication[] {
-  const current = getScholarships();
-  const idSet = new Set(ids);
-  const updated = current.filter((s) => !idSet.has(s.id));
-  localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
-}
-
-// ================= PAN CENTER PORTAL STORAGE =================
 export function getPANApplications(): PANApplication[] {
-  try {
-    const raw = localStorage.getItem(KEYS.PAN_APPLICATIONS);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return getActivePayload().panApplications || [];
 }
 
-export function savePANApplication(panApp: PANApplication): PANApplication[] {
-  const current = getPANApplications();
-  const index = current.findIndex((p) => p.id === panApp.id);
-  let updated: PANApplication[];
+export async function savePANApplication(panApp: PANApplication): Promise<PANApplication[]> {
+  const currentPayload = getActivePayload();
+  const currentList = [...(currentPayload.panApplications || [])];
+  const index = currentList.findIndex((p) => p.id === panApp.id);
+
   if (index >= 0) {
-    updated = [...current];
-    updated[index] = panApp;
+    currentList[index] = panApp;
   } else {
     const prefix = panApp.applicationType === 'New PAN Card' ? 'N' : panApp.applicationType === 'PAN Correction' ? 'C' : 'R';
     const newPan: PANApplication = {
@@ -513,146 +547,81 @@ export function savePANApplication(panApp: PANApplication): PANApplication[] {
       applicationNumber: panApp.applicationNumber || `${prefix}2026${String(Date.now()).slice(-6)}`,
       createdAt: new Date().toISOString(),
     };
-    updated = [newPan, ...current];
+    currentList.unshift(newPan);
   }
-  localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
+
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    panApplications: currentList,
+  };
+
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.panApplications;
 }
 
-export function bulkAddPANApplications(items: PANApplication[]): PANApplication[] {
-  const current = getPANApplications();
-  const updated = [...items, ...current];
-  localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
+export async function deleteMultiplePANApplications(ids: string[]): Promise<PANApplication[]> {
+  const currentPayload = getActivePayload();
+  const idSet = new Set(ids);
+  const currentList = (currentPayload.panApplications || []).filter((p) => !idSet.has(p.id));
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    panApplications: currentList,
+  };
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.panApplications;
 }
 
-export function savePANApplicationsBulk(items: PANApplication[]): PANApplication[] {
-  return bulkAddPANApplications(items);
-}
-
-export function deletePANApplication(id: string): PANApplication[] {
+export async function deletePANApplication(id: string): Promise<PANApplication[]> {
   return deleteMultiplePANApplications([id]);
 }
 
-export function deleteMultiplePANApplications(ids: string[]): PANApplication[] {
-  const current = getPANApplications();
-  const idSet = new Set(ids);
-  const updated = current.filter((p) => !idSet.has(p.id));
-  localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
+export async function bulkAddPANApplications(items: PANApplication[]): Promise<PANApplication[]> {
+  const currentPayload = getActivePayload();
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    panApplications: [...items, ...(currentPayload.panApplications || [])],
+  };
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.panApplications;
 }
 
-export function bulkAddCertificates(items: CertificateApplication[]): CertificateApplication[] {
-  const current = getCertificates();
-  const updated = [...items, ...current];
-  localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
-}
-
-export function saveCertificatesBulk(items: CertificateApplication[]): CertificateApplication[] {
-  return bulkAddCertificates(items);
+export async function savePANApplicationsBulk(items: PANApplication[]): Promise<PANApplication[]> {
+  return bulkAddPANApplications(items);
 }
 
 export function getLastSyncTime(): string | null {
-  return localStorage.getItem(KEYS.LAST_SYNC);
+  return localStorage.getItem('csc_last_sync_time');
 }
 
 export async function syncWithCloud(userUid?: string): Promise<{ success: boolean; message: string }> {
-  try {
-    const activeUid = userUid || auth.currentUser?.uid;
-    const refs = getCloudDocRefs(activeUid);
-
-    // 1. Build current local storage payload so every single entry is included
-    const localPayload: CloudBackupPayload = {
-      lastUpdated: new Date().toISOString(),
-      cscConfig: getCSCConfig(),
-      customers: getCustomers(),
-      transactions: getTransactions(),
-      certificates: getCertificates(),
-      scholarships: getScholarships(),
-      panApplications: getPANApplications(),
-      importantLinks: getImportantLinks(),
-    };
-
-    const fetchedPayloads: (CloudBackupPayload | null)[] = [localPayload];
-
-    // 2. Fetch existing cloud docs to merge multi-device entries
-    for (const docRef of refs) {
-      try {
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          fetchedPayloads.push(docSnap.data() as CloudBackupPayload);
-        }
-      } catch (readErr) {
-        console.warn('Pre-sync doc read notice:', readErr);
-      }
-    }
-
-    // 3. Combine local + cloud data into a master payload
-    const masterPayload = mergePayloads(fetchedPayloads);
-
-    // Apply merged result back to local storage
-    applyCloudDataToLocalStorage(masterPayload);
-
-    // 4. Save merged master payload to ALL Firestore doc references
-    for (const docRef of refs) {
-      try {
-        await setDoc(docRef, masterPayload, { merge: true });
-      } catch (fsErr) {
-        console.warn('Firestore sync write warning:', fsErr);
-      }
-    }
-
-    // 5. Save to Express API endpoint
-    try {
-      await fetch('/api/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(masterPayload),
-      });
-    } catch (apiErr) {
-      // Ignore API server sync errors
-    }
-
-    const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    localStorage.setItem(KEYS.LAST_SYNC, timeStr);
-    return { success: true, message: `Cloud sync successful (${timeStr})` };
-  } catch (err: unknown) {
-    console.warn('Sync failed / offline:', err);
-    return { success: false, message: 'Offline mode - saved locally' };
+  const uid = userUid || auth.currentUser?.uid;
+  if (!uid) {
+    return { success: false, message: 'User not authenticated' };
   }
-}
-
-let syncTimeout: any = null;
-function triggerAutoSync() {
-  if (syncTimeout) clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(() => {
-    if (navigator.onLine) {
-      syncWithCloud(auth.currentUser?.uid);
-    }
-  }, 100);
+  if (!navigator.onLine) {
+    return { success: false, message: '🔴 You are not connected to the internet. Please check your internet connection.' };
+  }
+  try {
+    const currentPayload = getActivePayload(uid);
+    await savePayloadToFirestoreAndCache(currentPayload, uid);
+    const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return { success: true, message: `Synced with cloud (${timeStr})` };
+  } catch (err: any) {
+    return { success: false, message: err?.message || 'Sync failed' };
+  }
 }
 
 export function getImportantLinks(): ImportantLink[] {
-  try {
-    const raw = localStorage.getItem(KEYS.IMPORTANT_LINKS);
-    return raw ? JSON.parse(raw) : defaultImportantLinks;
-  } catch {
-    return defaultImportantLinks;
-  }
+  return getActivePayload().importantLinks || defaultImportantLinks;
 }
 
-export function saveImportantLink(link: ImportantLink): ImportantLink[] {
-  const current = getImportantLinks();
-  const index = current.findIndex((l) => l.id === link.id);
-  let updated: ImportantLink[];
+export async function saveImportantLink(link: ImportantLink): Promise<ImportantLink[]> {
+  const currentPayload = getActivePayload();
+  const currentList = [...(currentPayload.importantLinks || [])];
+  const index = currentList.findIndex((l) => l.id === link.id);
+
   if (index >= 0) {
-    updated = [...current];
-    updated[index] = link;
+    currentList[index] = link;
   } else {
     const newLink: ImportantLink = {
       ...link,
@@ -660,102 +629,57 @@ export function saveImportantLink(link: ImportantLink): ImportantLink[] {
       isCustom: true,
       createdAt: new Date().toISOString(),
     };
-    updated = [newLink, ...current];
+    currentList.unshift(newLink);
   }
-  localStorage.setItem(KEYS.IMPORTANT_LINKS, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
+
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    importantLinks: currentList,
+  };
+
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.importantLinks;
 }
 
-export function deleteImportantLink(id: string): ImportantLink[] {
-  const current = getImportantLinks();
-  const updated = current.filter((l) => l.id !== id);
-  localStorage.setItem(KEYS.IMPORTANT_LINKS, JSON.stringify(updated));
-  triggerAutoSync();
-  return updated;
+export async function deleteImportantLink(id: string): Promise<ImportantLink[]> {
+  const currentPayload = getActivePayload();
+  const currentList = (currentPayload.importantLinks || []).filter((l) => l.id !== id);
+  const draft: CloudBackupPayload = {
+    ...currentPayload,
+    importantLinks: currentList,
+  };
+  await savePayloadToFirestoreAndCache(draft);
+  return draft.importantLinks;
 }
 
 export function exportFullDataJSON(): string {
-  const data: CloudBackupPayload = {
-    lastUpdated: new Date().toISOString(),
-    cscConfig: getCSCConfig(),
-    customers: getCustomers(),
-    transactions: getTransactions(),
-    certificates: getCertificates(),
-    scholarships: getScholarships(),
-    panApplications: getPANApplications(),
-    importantLinks: getImportantLinks(),
-  };
-  return JSON.stringify(data, null, 2);
+  return JSON.stringify(getActivePayload(), null, 2);
 }
 
 export async function importFullDataJSON(jsonStr: string): Promise<boolean> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) return false;
+
+  if (!navigator.onLine) {
+    throw new Error('🔴 You are not connected to the internet. Please check your internet connection.');
+  }
+
   try {
     const data: CloudBackupPayload = JSON.parse(jsonStr);
-    if (data.cscConfig && data.cscConfig.centreName) {
-      localStorage.setItem(KEYS.CONFIG, JSON.stringify(data.cscConfig));
-    }
-    if (data.customers && Array.isArray(data.customers)) {
-      localStorage.setItem(KEYS.CUSTOMERS, JSON.stringify(data.customers));
-    }
-    if (data.transactions && Array.isArray(data.transactions)) {
-      localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(data.transactions));
-    }
-    if (data.certificates && Array.isArray(data.certificates)) {
-      localStorage.setItem(KEYS.CERTIFICATES, JSON.stringify(data.certificates));
-    }
-    if (data.scholarships && Array.isArray(data.scholarships)) {
-      localStorage.setItem(KEYS.SCHOLARSHIPS, JSON.stringify(data.scholarships));
-    }
-    if (data.panApplications && Array.isArray(data.panApplications)) {
-      localStorage.setItem(KEYS.PAN_APPLICATIONS, JSON.stringify(data.panApplications));
-    }
-    if (data.importantLinks && Array.isArray(data.importantLinks)) {
-      localStorage.setItem(KEYS.IMPORTANT_LINKS, JSON.stringify(data.importantLinks));
-    }
-
-    // Build master payload and immediately push online to Cloud Firestore
-    const masterPayload: CloudBackupPayload = {
+    const draftPayload: CloudBackupPayload = {
       lastUpdated: new Date().toISOString(),
-      serverBackupTime: new Date().toISOString(),
-      cscConfig: getCSCConfig(),
-      customers: getCustomers(),
-      transactions: getTransactions(),
-      certificates: getCertificates(),
-      scholarships: getScholarships(),
-      panApplications: getPANApplications(),
-      importantLinks: getImportantLinks(),
+      cscConfig: data.cscConfig || defaultCSCConfig,
+      customers: Array.isArray(data.customers) ? data.customers : [],
+      transactions: Array.isArray(data.transactions) ? data.transactions : [],
+      certificates: Array.isArray(data.certificates) ? data.certificates : [],
+      scholarships: Array.isArray(data.scholarships) ? data.scholarships : [],
+      panApplications: Array.isArray(data.panApplications) ? data.panApplications : [],
+      importantLinks: Array.isArray(data.importantLinks) ? data.importantLinks : defaultImportantLinks,
     };
-
-    const activeUid = auth.currentUser?.uid;
-    const refs = getCloudDocRefs(activeUid);
-
-    // Save directly to all cloud Firestore references
-    for (const docRef of refs) {
-      try {
-        await setDoc(docRef, masterPayload);
-      } catch (e) {
-        console.warn('Doc save warning:', e);
-      }
-    }
-
-    // Save to Express API endpoint
-    try {
-      await fetch('/api/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(masterPayload),
-      });
-    } catch (e) {
-      console.warn('API sync warning:', e);
-    }
-
-    const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    localStorage.setItem(KEYS.LAST_SYNC, timeStr);
-
+    await savePayloadToFirestoreAndCache(draftPayload, uid);
     return true;
-  } catch (e) {
-    console.error('Failed to import JSON data:', e);
-    return false;
+  } catch (e: any) {
+    console.error('Failed to import JSON backup:', e);
+    throw e;
   }
 }

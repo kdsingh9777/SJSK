@@ -86,7 +86,7 @@ export const ImportantLinksSection: React.FC = () => {
     setIsAddModalOpen(true);
   };
 
-  const handleSaveForm = (e: React.FormEvent) => {
+  const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title.trim() || !formData.url.trim()) return;
 
@@ -106,16 +106,24 @@ export const ImportantLinksSection: React.FC = () => {
       createdAt: editingLink?.createdAt || new Date().toISOString(),
     };
 
-    const updatedList = saveImportantLink(newOrUpdatedLink);
-    setLinks(updatedList);
-    setIsAddModalOpen(false);
-    setEditingLink(null);
+    try {
+      const updatedList = await saveImportantLink(newOrUpdatedLink);
+      setLinks(updatedList);
+      setIsAddModalOpen(false);
+      setEditingLink(null);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to save link.');
+    }
   };
 
-  const handleDelete = (id: string) => {
-    const updated = deleteImportantLink(id);
-    setLinks(updated);
-    setLinkToDelete(null);
+  const handleDelete = async (id: string) => {
+    try {
+      const updated = await deleteImportantLink(id);
+      setLinks(updated);
+      setLinkToDelete(null);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to delete link.');
+    }
   };
 
   return (

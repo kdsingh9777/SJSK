@@ -95,29 +95,12 @@
     }
   },
   "firestore": {
-    "/csc_config/{configId}": {
-      "schema": { "$ref": "#/entities/Config" },
-      "description": "CSC Kendra Profile Config"
-    },
-    "/customers/{customerId}": {
-      "schema": { "$ref": "#/entities/Customer" },
-      "description": "Customer Directory Records"
-    },
-    "/transactions/{transactionId}": {
-      "schema": { "$ref": "#/entities/ServiceTransaction" },
-      "description": "Service Transactions"
-    },
-    "/certificates/{certificateId}": {
-      "schema": { "$ref": "#/entities/CertificateApplication" },
-      "description": "Certificate Applications"
-    },
-    "/scholarships/{scholarshipId}": {
-      "schema": { "$ref": "#/entities/ScholarshipApplication" },
-      "description": "Scholarship Applications"
-    },
-    "/pan_applications/{panId}": {
-      "schema": { "$ref": "#/entities/PANApplication" },
-      "description": "PAN Card Applications"
+    "/users/{userId}": {
+      "schema": {
+        "type": "object",
+        "description": "User account cloud database payload containing isolated user data"
+      },
+      "description": "User specific data store for CSC Kendra Profile, Customers, Transactions, Certificates, Scholarships, PAN Applications, and Important Links"
     }
   }
 }

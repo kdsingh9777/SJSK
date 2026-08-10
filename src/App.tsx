@@ -22,6 +22,7 @@ import { auth, onAuthStateChanged, signOut, User } from './lib/firebase';
 
 import {
   initLocalStorage,
+  clearUserSession,
   getCSCConfig,
   saveCSCConfig,
   getCustomers,
@@ -69,6 +70,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
+  const [showRestoredBanner, setShowRestoredBanner] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(getLastSyncTime());
   const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(false);
@@ -94,54 +96,63 @@ export default function App() {
 
   // Auth Listener & Initial Mount
   useEffect(() => {
-    initLocalStorage();
-    reloadAllData();
-
-    // Perform an initial cloud fetch on mount to get global_state immediately
-    fetchCloudBackupData().then((cloudData) => {
-      if (cloudData) {
-        reloadAllData();
-      }
-    });
-
     let unsubscribeRealtime: (() => void) | null = null;
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-      setAuthLoading(false);
-
       if (unsubscribeRealtime) {
         unsubscribeRealtime();
         unsubscribeRealtime = null;
       }
 
-      const uid = user?.uid;
-      // Fetch cloud backup data for this user account & global state
-      const cloudData = await fetchCloudBackupData(uid);
-      if (cloudData) {
-        reloadAllData();
+      if (!user) {
+        clearUserSession();
+        setCurrentUser(null);
+        setCustomers([]);
+        setTransactions([]);
+        setCertificates([]);
+        setScholarships([]);
+        setPanApplications([]);
+        setScholarshipActivities([]);
+        setAuthLoading(false);
+        return;
       }
-      // Always sync to ensure local & cloud are unified
-      await syncWithCloud(uid);
+
+      setCurrentUser(user);
+      setAuthLoading(true);
+
+      // Fetch primary user cloud data from Firestore
+      await fetchCloudBackupData(user.uid);
       reloadAllData();
 
-      // Subscribe to real-time multi-doc changes across devices
+      // Subscribe to real-time Firestore updates for active user
       unsubscribeRealtime = subscribeToRealtimeSync(() => {
         reloadAllData();
-      }, uid);
+      }, user.uid);
+
+      setAuthLoading(false);
     });
 
     // Online/Offline Listeners
+    let restoredTimer: ReturnType<typeof setTimeout> | null = null;
+
     const handleOnline = () => {
       setIsOnline(true);
+      setShowRestoredBanner(true);
+      if (restoredTimer) clearTimeout(restoredTimer);
+      restoredTimer = setTimeout(() => {
+        setShowRestoredBanner(false);
+      }, 4000);
+
       if (auth.currentUser) {
-        fetchCloudBackupData(auth.currentUser.uid).then((cloudData) => {
-          if (cloudData) reloadAllData();
+        fetchCloudBackupData(auth.currentUser.uid).then(() => {
+          reloadAllData();
         });
       }
     };
+
     const handleOffline = () => {
       setIsOnline(false);
+      setShowRestoredBanner(false);
     };
 
     window.addEventListener('online', handleOnline);
@@ -150,6 +161,7 @@ export default function App() {
     return () => {
       unsubscribeAuth();
       if (unsubscribeRealtime) unsubscribeRealtime();
+      if (restoredTimer) clearTimeout(restoredTimer);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -175,97 +187,159 @@ export default function App() {
   };
 
   const handleCloudSync = async () => {
-    if (!navigator.onLine) return;
+    if (!navigator.onLine) {
+      alert('🔴 You are not connected to the internet. Please check your internet connection.');
+      return;
+    }
     setIsSyncing(true);
     const res = await syncWithCloud(currentUser?.uid);
     setIsSyncing(false);
     if (res.success) {
       reloadAllData();
+      alert('✓ Data successfully synchronized with Firestore primary cloud storage.');
+    } else {
+      alert(res.message || 'Sync failed.');
     }
   };
 
-  // Handlers for Data Mutations
-  const handleSaveCustomer = (cust: Customer) => {
-    const updated = saveCustomer(cust);
-    setCustomers(updated);
-  };
-
-  const handleDeleteCustomer = (id: string) => {
-    const updated = deleteCustomer(id);
-    setCustomers(updated);
-  };
-
-  const handleSaveTransaction = (tx: ServiceTransaction) => {
-    const updated = saveTransaction(tx);
-    setTransactions(updated);
-    if (!tx.id || tx.id.startsWith('tx-')) {
-      setSelectedReceiptTx(tx);
+  // Handlers for Data Mutations - Firestore write MUST succeed FIRST
+  const handleSaveCustomer = async (cust: Customer) => {
+    try {
+      const updated = await saveCustomer(cust);
+      setCustomers(updated);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to save customer.');
     }
   };
 
-  const handleDeleteTransaction = (id: string) => {
-    const updated = deleteTransaction(id);
-    setTransactions(updated);
+  const handleDeleteCustomer = async (id: string) => {
+    try {
+      const updated = await deleteCustomer(id);
+      setCustomers(updated);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to delete customer.');
+    }
   };
 
-  const handleSaveCertificate = (cert: CertificateApplication) => {
-    const updated = saveCertificate(cert);
-    setCertificates(updated);
+  const handleSaveTransaction = async (tx: ServiceTransaction) => {
+    try {
+      const updated = await saveTransaction(tx);
+      setTransactions(updated);
+      if (!tx.id || tx.id.startsWith('tx-')) {
+        setSelectedReceiptTx(tx);
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Failed to save transaction.');
+    }
   };
 
-  const handleDeleteCertificate = (ids: string | string[]) => {
-    const idList = Array.isArray(ids) ? ids : [ids];
-    const updated = deleteMultipleCertificates(idList);
-    setCertificates(updated);
+  const handleDeleteTransaction = async (id: string) => {
+    try {
+      const updated = await deleteTransaction(id);
+      setTransactions(updated);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to delete transaction.');
+    }
   };
 
-  const handleBulkAddCertificates = (items: CertificateApplication[]) => {
-    const updated = saveCertificatesBulk(items);
-    setCertificates(updated);
+  const handleSaveCertificate = async (cert: CertificateApplication) => {
+    try {
+      const updated = await saveCertificate(cert);
+      setCertificates(updated);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to save certificate.');
+    }
+  };
+
+  const handleDeleteCertificate = async (ids: string | string[]) => {
+    try {
+      const idList = Array.isArray(ids) ? ids : [ids];
+      const updated = await deleteMultipleCertificates(idList);
+      setCertificates(updated);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to delete certificate.');
+    }
+  };
+
+  const handleBulkAddCertificates = async (items: CertificateApplication[]) => {
+    try {
+      const updated = await saveCertificatesBulk(items);
+      setCertificates(updated);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to bulk save certificates.');
+    }
   };
 
   // Scholarship Portal Handlers
-  const handleSaveScholarship = (sch: ScholarshipApplication) => {
-    const updated = saveScholarship(sch);
-    setScholarships(updated);
+  const handleSaveScholarship = async (sch: ScholarshipApplication) => {
+    try {
+      const updated = await saveScholarship(sch);
+      setScholarships(updated);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to save scholarship.');
+    }
   };
 
-  const handleDeleteScholarship = (ids: string | string[]) => {
-    const idList = Array.isArray(ids) ? ids : [ids];
-    const updated = deleteMultipleScholarships(idList);
-    setScholarships(updated);
+  const handleDeleteScholarship = async (ids: string | string[]) => {
+    try {
+      const idList = Array.isArray(ids) ? ids : [ids];
+      const updated = await deleteMultipleScholarships(idList);
+      setScholarships(updated);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to delete scholarship.');
+    }
   };
 
-  const handleBulkAddScholarships = (items: ScholarshipApplication[]) => {
-    const updated = saveScholarshipsBulk(items);
-    setScholarships(updated);
+  const handleBulkAddScholarships = async (items: ScholarshipApplication[]) => {
+    try {
+      const updated = await saveScholarshipsBulk(items);
+      setScholarships(updated);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to bulk save scholarships.');
+    }
   };
 
   // PAN Portal Handlers
-  const handleSavePANApplication = (app: PANApplication) => {
-    const updated = savePANApplication(app);
-    setPanApplications(updated);
+  const handleSavePANApplication = async (app: PANApplication) => {
+    try {
+      const updated = await savePANApplication(app);
+      setPanApplications(updated);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to save PAN application.');
+    }
   };
 
-  const handleDeletePANApplication = (ids: string | string[]) => {
-    const idList = Array.isArray(ids) ? ids : [ids];
-    const updated = deleteMultiplePANApplications(idList);
-    setPanApplications(updated);
+  const handleDeletePANApplication = async (ids: string | string[]) => {
+    try {
+      const idList = Array.isArray(ids) ? ids : [ids];
+      const updated = await deleteMultiplePANApplications(idList);
+      setPanApplications(updated);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to delete PAN application.');
+    }
   };
 
-  const handleBulkAddPANApplications = (items: PANApplication[]) => {
-    const updated = savePANApplicationsBulk(items);
-    setPanApplications(updated);
+  const handleBulkAddPANApplications = async (items: PANApplication[]) => {
+    try {
+      const updated = await savePANApplicationsBulk(items);
+      setPanApplications(updated);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to bulk save PAN applications.');
+    }
   };
 
-  const handleSaveConfig = (newConfig: CSCConfig) => {
-    saveCSCConfig(newConfig);
-    setConfig(newConfig);
+  const handleSaveConfig = async (newConfig: CSCConfig) => {
+    try {
+      const updatedConfig = await saveCSCConfig(newConfig);
+      setConfig(updatedConfig);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to save settings.');
+    }
   };
 
-  const handleUpdatePin = (newPin: string) => {
+  const handleUpdatePin = async (newPin: string) => {
     const updated = { ...config, adminPin: newPin };
-    handleSaveConfig(updated);
+    await handleSaveConfig(updated);
   };
 
   // Quick Action Routing Helpers
@@ -304,6 +378,20 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans antialiased selection:bg-amber-500 selection:text-slate-950">
+      {/* Network Connectivity Banners */}
+      {!isOnline && (
+        <div className="bg-red-600 text-white text-xs md:text-sm font-bold px-4 py-2.5 text-center flex items-center justify-center gap-2 shadow-lg z-50 sticky top-0 animate-fade-in">
+          <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+          <span>🔴 You are not connected to the internet. Please check your internet connection.</span>
+        </div>
+      )}
+
+      {isOnline && showRestoredBanner && (
+        <div className="bg-emerald-600 text-white text-xs md:text-sm font-bold px-4 py-2.5 text-center flex items-center justify-center gap-2 shadow-lg z-50 sticky top-0 transition-all duration-300">
+          <span className="w-2.5 h-2.5 rounded-full bg-white" />
+          <span>🟢 Internet connection restored.</span>
+        </div>
+      )}
       {/* Top Application Navigation Header */}
       <Header
         activeTab={activeTab}
